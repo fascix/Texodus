@@ -12,13 +12,13 @@ Download the latest release from the [releases page](https://github.com/w512/tex
 
 -   **CodeMirror 6 Editor**: Modern editing experience with markdown syntax highlighting, smart indentation, and large-document performance.
 -   **Live Markdown Preview**: Real-time, debounced rendering with full **GitHub Flavored Markdown (GFM)** support — tables, strikethrough, autolinks, and interactive task list checkboxes you can toggle directly in the preview.
--   **TeX Math**: Render inline `$...$` (including formulas that wrap across lines) and display `$$...$$` formulas with KaTeX in the live preview and HTML exports; a single `$` on its own line also opens display math. Output uses MathML, so exported pages stay self-contained with no stylesheet or font downloads.
+-   **TeX Math**: Render inline `$...$` (including formulas that wrap across lines) and display `$$...$$` formulas with KaTeX in the live preview and HTML exports, and with MathJax vector SVG in PDF exports; a single `$` on its own line also opens display math. HTML output uses MathML, so exported pages stay self-contained with no stylesheet or font downloads.
 -   **Mermaid Diagrams**: Render flowcharts, sequence diagrams, and other Mermaid graph types inline in the preview, themed to match the active color scheme.
 -   **Local Images**: Embed images with relative (`![](images/foo.png)`) or absolute filesystem paths — resolved against the open document's directory via Tauri's asset protocol.
 -   **Export**: Save the current document as standalone HTML or PDF.
 -   **Workspace Sidebar**: Open a folder to browse its Markdown files in a lazy-loaded tree, with a context menu to create, rename, delete, and reveal files. Clicking a file opens it in the current window; `Cmd/Ctrl+Click` (or the context menu) opens it in a new window.
 -   **Quick Open**: A `Cmd/Ctrl+P` palette to fuzzy-find and jump to any file in the workspace.
--   **Find & Replace**: A full-width find bar (`Cmd/Ctrl+F`, replace with `Cmd+Alt+F` / `Ctrl+H`) with live match counts, case-sensitive, whole-word, and regular-expression toggles, plus replace-current and replace-all. Search works in both the editor and the live preview; replace is enabled whenever the editor pane is mounted.
+-   **Find & Replace**: A full-width find bar (`Cmd/Ctrl+F`, replace with `Cmd+Alt+F` / `Ctrl+H`) with live match counts, case-sensitive, whole-word, and regular-expression toggles, an explicit replace toggle, plus replace-current and replace-all. Search works in both the editor and the live preview; replace is enabled whenever the editor pane is mounted.
 -   **Multi-Document & Multi-Window**: Open multiple documents in a new tabbed interface or separate native windows. A file that is already open elsewhere gets its window focused instead of being opened twice.
 -   **Auto-Reload**: Files are automatically reloaded when they are changed on disk by external programs.
 -   **Settings Mode**: A dedicated settings mode for easier configuration.
