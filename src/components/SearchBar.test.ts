@@ -13,6 +13,9 @@ vi.mock('../composables/useDocumentSearch', async () => {
     caseSensitive: ref(false),
     useRegex: ref(false),
     wholeWord: ref(false),
+    replacementText: ref(''),
+    showReplace: ref(false),
+    canReplace: ref(true),
     matchCount: ref(3),
     currentIndex: ref(2),
     hasError: ref(false),
@@ -22,6 +25,10 @@ vi.mock('../composables/useDocumentSearch', async () => {
     setCaseSensitive: vi.fn(),
     setRegex: vi.fn(),
     setWholeWord: vi.fn(),
+    setReplacement: vi.fn((value: string) => { state.replacementText.value = value; }),
+    toggleReplace: vi.fn(() => { state.showReplace.value = !state.showReplace.value; }),
+    replaceCurrent: vi.fn(),
+    replaceAll: vi.fn(),
     next: vi.fn(),
     prev: vi.fn(),
     refresh: vi.fn(),
@@ -38,6 +45,9 @@ beforeEach(() => {
   search.matchCount.value = 3;
   search.currentIndex.value = 2;
   search.hasError.value = false;
+  search.replacementText.value = '';
+  search.showReplace.value = false;
+  search.canReplace.value = true;
 });
 
 describe('SearchBar', () => {
@@ -78,5 +88,33 @@ describe('SearchBar', () => {
     search.queryText.value = '  ';
     await wrapper.vm.$nextTick();
     expect(wrapper.get('.searchbar-count').text()).toBe('');
+  });
+
+  it('toggles the replace row and forwards replacement actions', async () => {
+    const wrapper = mount(SearchBar);
+    expect(wrapper.find('.replace-field').exists()).toBe(false);
+
+    await wrapper.get('.sb-expand').trigger('click');
+    expect(useDocumentSearch().toggleReplace).toHaveBeenCalledOnce();
+    expect(wrapper.find('.replace-field').exists()).toBe(true);
+
+    await wrapper.get('.searchbar-replace').setValue('replacement');
+    expect(useDocumentSearch().setReplacement).toHaveBeenCalledWith('replacement');
+
+    await wrapper.get('[title="Replace (Enter)"]').trigger('click');
+    await wrapper.get('[title="Replace all (Cmd/Ctrl+Enter)"]').trigger('click');
+    expect(useDocumentSearch().replaceCurrent).toHaveBeenCalledOnce();
+    expect(useDocumentSearch().replaceAll).toHaveBeenCalledOnce();
+  });
+
+  it('replaces on Enter in the replacement field', async () => {
+    const wrapper = mount(SearchBar);
+    await wrapper.get('.sb-expand').trigger('click');
+
+    await wrapper.get('.searchbar-replace').trigger('keydown', { key: 'Enter' });
+    expect(useDocumentSearch().replaceCurrent).toHaveBeenCalledOnce();
+
+    await wrapper.get('.searchbar-replace').trigger('keydown', { key: 'Enter', metaKey: true });
+    expect(useDocumentSearch().replaceAll).toHaveBeenCalledOnce();
   });
 });
