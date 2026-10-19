@@ -6,8 +6,9 @@
  * and the `marked` options. Keeping them in one place ensures sanitization
  * rules can't quietly drift between the two surfaces.
  */
-import { marked, type MarkedOptions, type Token, type Tokens } from 'marked';
+import { marked, type MarkedExtension, type MarkedOptions, type Token, type Tokens } from 'marked';
 import markedKatex from 'marked-katex-extension';
+import katex from 'katex';
 import DOMPurify from 'dompurify';
 import { detectFrontmatterState, extractFrontmatterBody, splitFrontmatter } from '../utils/frontmatter';
 import { createHeadingSlugger, htmlToPlainText } from '../utils/headingSlug';
@@ -41,6 +42,77 @@ const slugger = createHeadingSlugger();
 // MathML only: it needs no KaTeX stylesheet or font files, so the same output
 // works in the live preview and in self-contained HTML exports.
 marked.use(markedKatex({ throwOnError: false, output: 'mathml' }));
+
+interface MultilineKatexToken extends Tokens.Generic {
+  type: 'inlineKatexMultiline' | 'blockKatexDollar';
+  text: string;
+  displayMode: boolean;
+}
+
+// The upstream extension refuses newlines inside `$...$`, and treats `$` on
+// its own line as inline rather than display math. Both are easy to hit while
+// writing TeX in a prose document, so this extension runs first and handles
+// those two shapes; upstream still covers `$$...$$`.
+const INLINE_TEX = /^\$((?:\\[\s\S]|(?!\n[ \t]*\n)[^\\$])+?)\$(?=[\s?!.,:;？！。，：)\]}]|$)/;
+const BLOCK_DOLLAR_TEX = /^\$\n([\s\S]+?)\n\$(?:\n|$)/;
+
+function renderKatexToken(token: MultilineKatexToken): string {
+  const html = katex.renderToString(token.text.trim(), {
+    throwOnError: false,
+    output: 'mathml',
+    displayMode: token.displayMode,
+  });
+  return token.type === 'blockKatexDollar' ? `${html}\n` : html;
+}
+
+function multilineKatex(): MarkedExtension {
+  return {
+    extensions: [
+      {
+        name: 'blockKatexDollar',
+        level: 'block',
+        tokenizer(src) {
+          const match = BLOCK_DOLLAR_TEX.exec(src);
+          if (!match) return;
+          return {
+            type: 'blockKatexDollar',
+            raw: match[0],
+            text: match[1],
+            displayMode: true,
+          };
+        },
+        renderer(token) {
+          return renderKatexToken(token as MultilineKatexToken);
+        },
+      },
+      {
+        name: 'inlineKatexMultiline',
+        level: 'inline',
+        start(src) {
+          for (let index = src.indexOf('$'); index >= 0; index = src.indexOf('$', index + 1)) {
+            if (index === 0 || src[index - 1] !== '\\') return index;
+          }
+          return undefined;
+        },
+        tokenizer(src) {
+          const match = INLINE_TEX.exec(src);
+          if (!match) return;
+          return {
+            type: 'inlineKatexMultiline',
+            raw: match[0],
+            text: match[1],
+            displayMode: false,
+          };
+        },
+        renderer(token) {
+          return renderKatexToken(token as MultilineKatexToken);
+        },
+      },
+    ],
+  };
+}
+
+marked.use(multilineKatex());
 
 marked.use({
   ...MARKED_OPTIONS,

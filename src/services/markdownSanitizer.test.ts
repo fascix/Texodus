@@ -129,6 +129,30 @@ describe('renderMarkdownToSafeHtml', () => {
     expect(out).not.toContain('class="katex"');
   });
 
+  it('renders inline TeX whose closing delimiter is on the next line', async () => {
+    const out = await renderMarkdownToSafeHtml('Euler: $\\Theta(n)\n$.');
+    expect(out).toContain('class="katex"');
+    expect(out).toContain('<annotation encoding="application/x-tex">\\Theta(n)</annotation>');
+    expect(out).toContain('.</p>');
+  });
+
+  it('renders a single-dollar block whose delimiters sit on their own lines', async () => {
+    const out = await renderMarkdownToSafeHtml('$\n\\Theta(n)\n$');
+    expect(out).toContain('<math');
+    expect(out).toContain('display="block"');
+    expect(out).toContain('>Θ</mi>');
+  });
+
+  it('does not let inline TeX span a blank line', async () => {
+    const out = await renderMarkdownToSafeHtml('$\\Theta(n)\n\n$.');
+    expect(out).not.toContain('class="katex"');
+  });
+
+  it('does not treat an escaped opening dollar as TeX', async () => {
+    const out = await renderMarkdownToSafeHtml('\\$x$');
+    expect(out).not.toContain('class="katex"');
+  });
+
   it('sanitizes hostile markup inside a math element', () => {
     const out = sanitizeMarkdownHtml(
       '<math><mrow><mi>x</mi><script>alert(1)</script><mi onclick="alert(2)">y</mi></mrow></math>',
