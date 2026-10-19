@@ -208,3 +208,53 @@ describe('buildPdfDocDefinition — flat inline runs', () => {
     expect(runs[0].linkToDestination).toBeUndefined();
   });
 });
+
+describe('buildPdfDocDefinition — TeX math', () => {
+  function walk(node: unknown, out: Record<string, unknown>[] = []): Record<string, unknown>[] {
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child, out);
+      return out;
+    }
+    if (node && typeof node === 'object') {
+      const record = node as Record<string, unknown>;
+      out.push(record);
+      for (const value of Object.values(record)) walk(value, out);
+    }
+    return out;
+  }
+
+  async function mathSvgsFor(markdown: string) {
+    const def = await buildPdfDocDefinition(markdown, 'Doc', null);
+    return walk(def.content).filter((node) => typeof node.svg === 'string');
+  }
+
+  it('renders inline math as SVG instead of raw TeX', async () => {
+    const svgs = await mathSvgsFor('Energy: $E=mc^2$');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+    expect(Number(svgs[0].width)).toBeGreaterThan(5);
+    expect(JSON.stringify(svgs)).not.toContain('$E=mc^2$');
+  });
+
+  it('renders display math from $$ blocks', async () => {
+    const svgs = await mathSvgsFor('$$\n\\frac{a}{b}\n$$');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders a single-dollar display block', async () => {
+    const svgs = await mathSvgsFor('$\n\\Theta(n)\n$');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('keeps every formula when a paragraph has several', async () => {
+    const svgs = await mathSvgsFor('$a$ and $b$');
+    expect(svgs).toHaveLength(2);
+  });
+
+  it('renders inline formulas that wrap across lines', async () => {
+    const svgs = await mathSvgsFor('Runtime is $\\Theta(n)\n$.');
+    expect(svgs).toHaveLength(1);
+  });
+});
