@@ -107,6 +107,12 @@ describe('SearchBar', () => {
     expect(useDocumentSearch().replaceAll).toHaveBeenCalledOnce();
   });
 
+  it('offers an explicit replace toggle beside the search options', async () => {
+    const wrapper = mount(SearchBar);
+    await wrapper.get('.sb-replace-toggle').trigger('click');
+    expect(useDocumentSearch().toggleReplace).toHaveBeenCalledOnce();
+  });
+
   it('replaces on Enter in the replacement field', async () => {
     const wrapper = mount(SearchBar);
     await wrapper.get('.sb-expand').trigger('click');

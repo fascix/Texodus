@@ -46,6 +46,15 @@
               title="Regular expression"
               @click="setRegex(!useRegex)"
             >.*</button>
+            <button
+              type="button"
+              class="sb-toggle sb-replace-toggle"
+              :class="{ active: showReplace }"
+              :aria-pressed="showReplace"
+              aria-label="Replace"
+              :title="showReplace ? 'Hide replace' : 'Show replace'"
+              @click="toggleReplace"
+            >⇄</button>
           </div>
         </div>
 
