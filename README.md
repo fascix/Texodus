@@ -12,6 +12,7 @@ Download the latest release from the [releases page](https://github.com/w512/tex
 
 -   **CodeMirror 6 Editor**: Modern editing experience with markdown syntax highlighting, smart indentation, and large-document performance.
 -   **Live Markdown Preview**: Real-time, debounced rendering with full **GitHub Flavored Markdown (GFM)** support — tables, strikethrough, autolinks, and interactive task list checkboxes you can toggle directly in the preview.
+-   **TeX Math**: Render inline `$...$` and display `$$...$$` formulas with KaTeX in the live preview and HTML exports. Output uses MathML, so exported pages stay self-contained with no stylesheet or font downloads.
 -   **Mermaid Diagrams**: Render flowcharts, sequence diagrams, and other Mermaid graph types inline in the preview, themed to match the active color scheme.
 -   **Local Images**: Embed images with relative (`![](images/foo.png)`) or absolute filesystem paths — resolved against the open document's directory via Tauri's asset protocol.
 -   **Export**: Save the current document as standalone HTML or PDF.
@@ -47,7 +48,7 @@ Download the latest release from the [releases page](https://github.com/w512/tex
 -   **Frontend**: [Vue 3](https://vuejs.org/) (Composition API) + [Vite](https://vitejs.dev/)
 -   **Editor**: [CodeMirror 6](https://codemirror.net/)
 -   **State**: [Pinia](https://pinia.vuejs.org/)
--   **Markdown**: [marked.js](https://marked.js.org/) compliant with the **GitHub Flavored Markdown (GFM)** specification, with [DOMPurify](https://github.com/cure53/dompurify) for sanitization.
+-   **Markdown**: [marked.js](https://marked.js.org/) compliant with the **GitHub Flavored Markdown (GFM)** specification, with [DOMPurify](https://github.com/cure53/dompurify) for sanitization and [KaTeX](https://katex.org/) for TeX math.
 -   **Diagrams**: [Mermaid](https://mermaid.js.org/)
 -   **Syntax Highlighting**: [Prism.js](https://prismjs.com/) (preview code blocks)
 -   **Styling**: Vanilla CSS (no frameworks) with CSS variables for theming.
