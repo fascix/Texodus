@@ -60,6 +60,7 @@
 
         <div v-if="showReplace" class="searchbar-field replace-field">
           <input
+            ref="replaceInputRef"
             type="text"
             class="searchbar-input searchbar-replace"
             placeholder="Replace with…"
@@ -118,6 +119,7 @@ const {
 const settingsStore = useSettingsStore();
 const editorStore = useEditorStore();
 const inputRef = ref<HTMLInputElement | null>(null);
+const replaceInputRef = ref<HTMLInputElement | null>(null);
 
 const countLabel = computed(() => {
   if (!queryText.value.trim()) return '';
@@ -150,8 +152,18 @@ function onReplaceKeydown(e: KeyboardEvent) {
 // Focus + select the field whenever search is (re)opened via Cmd/Ctrl+F.
 watch(focusNonce, async () => {
   await nextTick();
-  inputRef.value?.focus();
-  inputRef.value?.select();
+  const input = showReplace.value ? replaceInputRef.value : inputRef.value;
+  input?.focus();
+  input?.select();
+});
+
+// Opening the replace row moves the caret there so typing lands in the
+// replacement field instead of the find field.
+watch(showReplace, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  replaceInputRef.value?.focus();
+  replaceInputRef.value?.select();
 });
 
 // Layout switch changes which pane the search targets (and whether the editor

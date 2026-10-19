@@ -113,6 +113,15 @@ describe('SearchBar', () => {
     expect(useDocumentSearch().toggleReplace).toHaveBeenCalledOnce();
   });
 
+  it('focuses the replacement field when the replace row opens', async () => {
+    const wrapper = mount(SearchBar, { attachTo: document.body });
+    await wrapper.get('.sb-replace-toggle').trigger('click');
+    await wrapper.vm.$nextTick();
+
+    expect(document.activeElement).toBe(wrapper.get('.searchbar-replace').element);
+    wrapper.unmount();
+  });
+
   it('replaces on Enter in the replacement field', async () => {
     const wrapper = mount(SearchBar);
     await wrapper.get('.sb-expand').trigger('click');
