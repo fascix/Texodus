@@ -66,6 +66,8 @@ const EXPORT_CSS = `
   th, td { border: 1px solid #ddd; padding: 0.5em 0.85em; }
   th { background: #f5f7fa; font-weight: 600; }
   hr { border: none; border-top: 2px solid #e0e0e0; margin: 1.5em 0; }
+  .katex-error { color: ${EXPORT_DANGER_COLOR}; }
+  math[display="block"] { margin: 0.75em 0; }
   pre.frontmatter { background: transparent; border-top: 1px solid #e0e0e0; border-bottom: 1px solid #e0e0e0; border-radius: 0; padding: 0.75rem 0.15rem; margin: 0 0 1.6rem; font-size: 12px; color: #666; }
   input[type="checkbox"] { margin-right: 0.5em; accent-color: #2563eb; vertical-align: middle; }
   .mermaid-preview-container {

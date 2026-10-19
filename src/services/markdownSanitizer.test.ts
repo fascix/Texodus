@@ -95,6 +95,49 @@ describe('renderMarkdownToSafeHtml', () => {
     expect(out.match(/data-task/g)).toHaveLength(2);
     expect(out).toContain('checked');
   });
+
+  it('renders inline TeX as KaTeX MathML', async () => {
+    const out = await renderMarkdownToSafeHtml('Euler: $e^{i\\pi}+1=0$');
+    expect(out).toContain('<span class="katex">');
+    expect(out).toContain('<math');
+    expect(out).toContain('<msup>');
+    expect(out).toContain('<annotation encoding="application/x-tex">e^{i\\pi}+1=0</annotation>');
+  });
+
+  it('renders block TeX as a display formula', async () => {
+    const out = await renderMarkdownToSafeHtml('$$\n\\frac{a}{b}\n$$');
+    expect(out).toContain('<math');
+    expect(out).toContain('display="block"');
+    expect(out).toContain('<mfrac>');
+  });
+
+  it('leaves ordinary dollar amounts alone', async () => {
+    const out = await renderMarkdownToSafeHtml('It costs $5 and $10.');
+    expect(out).toContain('$5 and $10.');
+    expect(out).not.toContain('class="katex"');
+  });
+
+  it('shows invalid TeX as an error instead of throwing', async () => {
+    const out = await renderMarkdownToSafeHtml('$\\frac{1}$');
+    expect(out).toContain('class="katex-error"');
+    expect(out).toContain('\\frac{1}');
+  });
+
+  it('does not parse TeX inside inline code', async () => {
+    const out = await renderMarkdownToSafeHtml('`$x$`');
+    expect(out).toContain('<code>$x$</code>');
+    expect(out).not.toContain('class="katex"');
+  });
+
+  it('sanitizes hostile markup inside a math element', () => {
+    const out = sanitizeMarkdownHtml(
+      '<math><mrow><mi>x</mi><script>alert(1)</script><mi onclick="alert(2)">y</mi></mrow></math>',
+    );
+    expect(out).toContain('<math>');
+    expect(out).toContain('<mi>x</mi>');
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('onclick');
+  });
 });
 
 describe('splitRenderableFrontmatter', () => {

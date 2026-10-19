@@ -7,6 +7,7 @@
  * rules can't quietly drift between the two surfaces.
  */
 import { marked, type MarkedOptions, type Token, type Tokens } from 'marked';
+import markedKatex from 'marked-katex-extension';
 import DOMPurify from 'dompurify';
 import { detectFrontmatterState, extractFrontmatterBody, splitFrontmatter } from '../utils/frontmatter';
 import { createHeadingSlugger, htmlToPlainText } from '../utils/headingSlug';
@@ -37,6 +38,10 @@ const slugger = createHeadingSlugger();
 // with explicit options (`options ?? this.defaults`, no merge), which silently
 // drops this renderer override — data-task disappears and preview checkbox
 // clicks stop mapping back to source markers.
+// MathML only: it needs no KaTeX stylesheet or font files, so the same output
+// works in the live preview and in self-contained HTML exports.
+marked.use(markedKatex({ throwOnError: false, output: 'mathml' }));
+
 marked.use({
   ...MARKED_OPTIONS,
   renderer: {
@@ -66,9 +71,22 @@ const ALLOWED_TAGS = [
   'strong','em','del','u','a','img','table','thead',
   'tbody','tr','th','td','sup','sub','span','div',
   'input',
+  // KaTeX MathML output.
+  'math','semantics','annotation','mrow','mi','mn','mo','mtext','mspace',
+  'msup','msub','msubsup','mfrac','msqrt','mroot','mover','munder',
+  'munderover','mtable','mtr','mtd','mstyle','mpadded','mphantom','menclose',
+  'mmultiscripts','mprescripts','none',
 ];
 
-const ALLOWED_ATTR = ['href','src','alt','title','class','id','rel','type','checked','data-task','data-anchor'];
+const ALLOWED_ATTR = [
+  'href','src','alt','title','class','id','rel','type','checked','data-task','data-anchor',
+  // MathML attributes emitted by KaTeX. None can carry a URL or a script.
+  'xmlns','display','encoding','mathvariant','displaystyle','scriptlevel',
+  'stretchy','fence','separator','lspace','rspace','accent','accentunder',
+  'columnalign','columnlines','columnspacing','rowlines','rowspacing',
+  'frame','framespacing','width','height','depth','voffset','linethickness',
+  'notation','mathcolor','mathbackground','mathsize',
+];
 
 /** Exactly the shape `slugifyHeadingText` can produce: letters, digits,
  *  combining marks, `_` and `-`. No quotes, no colons, no dots — nothing that

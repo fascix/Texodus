@@ -41,6 +41,13 @@ describe('renderExportHtml', () => {
     const html = await renderExportHtml('safe\n\n<script>alert(1)</script>', 'T');
     expect(html).not.toContain('<script>alert(1)');
   });
+
+  it('keeps rendered TeX as MathML in the exported HTML', async () => {
+    const html = await renderExportHtml('Energy: $E=mc^2$', 'Physics');
+    expect(html).toContain('<math');
+    expect(html).toContain('<msup>');
+    expect(html).not.toContain('$E=mc^2$');
+  });
 });
 
 describe('renderExportHtml — local image embedding', () => {

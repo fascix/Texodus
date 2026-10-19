@@ -452,6 +452,14 @@ onUnmounted(() => {
 }
 :deep(th) { background: var(--toolbar-bg); font-weight: 600; }
 
+:deep(.katex-error) {
+  color: var(--danger-color, #cc0000);
+}
+
+:deep(math[display="block"]) {
+  margin: 0.75em 0;
+}
+
 :deep(hr) {
   border: none;
   border-top: 2px solid var(--border-color);
