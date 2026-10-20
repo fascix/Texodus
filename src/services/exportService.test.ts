@@ -262,6 +262,36 @@ describe('buildPdfDocDefinition — TeX math', () => {
     expect(svgs[0].svg).toContain('<svg');
   });
 
+  it('renders LaTeX inline delimiters', async () => {
+    const svgs = await mathSvgsFor('Euler: \\(e^{i\\pi}+1=0\\)');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders LaTeX display delimiters', async () => {
+    const svgs = await mathSvgsFor('\\[\n\\frac{a}{b}\n\\]');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders equation and align environments', async () => {
+    const equation = await mathSvgsFor('\\begin{equation}\nx=1\n\\end{equation}');
+    expect(equation).toHaveLength(1);
+    expect(equation[0].svg).toContain('<svg');
+
+    const align = await mathSvgsFor('\\begin{align}\na&=b\\\\\nc&=d\n\\end{align}');
+    expect(align).toHaveLength(1);
+    expect(align[0].svg).toContain('<svg');
+
+    const multline = await mathSvgsFor('\\begin{multline}\na+b+c\\\\\n=d\n\\end{multline}');
+    expect(multline).toHaveLength(1);
+    expect(multline[0].svg).toContain('<svg');
+
+    const eqnarray = await mathSvgsFor('\\begin{eqnarray}\na&=&b\\\\\nc&=&d\n\\end{eqnarray}');
+    expect(eqnarray).toHaveLength(1);
+    expect(eqnarray[0].svg).toContain('<svg');
+  });
+
   it('keeps every formula when a paragraph has several', async () => {
     const svgs = await mathSvgsFor('$a$ and $b$');
     expect(svgs).toHaveLength(2);

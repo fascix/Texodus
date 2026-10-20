@@ -129,6 +129,16 @@ describe('renderMarkdownToSafeHtml', () => {
     expect(out).not.toContain('class="katex"');
   });
 
+  it('does not parse LaTeX delimiters inside code', async () => {
+    const inline = await renderMarkdownToSafeHtml('`\\(x\\)` and `\\[y\\]`');
+    expect(inline).toContain('<code>\\(x\\)</code>');
+    expect(inline).not.toContain('class="katex"');
+
+    const fenced = await renderMarkdownToSafeHtml('```\n\\begin{equation}\nx=1\n\\end{equation}\n```');
+    expect(fenced).toContain('<code');
+    expect(fenced).not.toContain('<math');
+  });
+
   it('renders inline TeX whose closing delimiter is on the next line', async () => {
     const out = await renderMarkdownToSafeHtml('Euler: $\\Theta(n)\n$.');
     expect(out).toContain('class="katex"');
@@ -161,6 +171,58 @@ describe('renderMarkdownToSafeHtml', () => {
     expect(out).toContain('<math');
     expect(out).toContain('\\text{($\\Theta(n)$ termes)}');
     expect(out).not.toContain('class="katex-error"');
+  });
+
+  it('renders LaTeX inline delimiters', async () => {
+    const source = 'Euler: \\(e^{i\\pi}+1=0\\)';
+    const out = await renderMarkdownToSafeHtml(source);
+    expect(out).toContain('class="katex"');
+    expect(out).toContain('<annotation encoding="application/x-tex">e^{i\\pi}+1=0</annotation>');
+    expect(parseMarkdownTokens(lexMarkdown(source))).toContain('class="katex"');
+  });
+
+  it('renders LaTeX display delimiters', async () => {
+    const source = '\\[\n\\frac{a}{b}\n\\]';
+    const out = await renderMarkdownToSafeHtml(source);
+    expect(out).toContain('<math');
+    expect(out).toContain('display="block"');
+    expect(out).toContain('<mfrac>');
+    expect(parseMarkdownTokens(lexMarkdown(source))).toContain('<math');
+  });
+
+  it('keeps nested dollars inside inline double-dollar and bracket math', async () => {
+    const doubleDollar = await renderMarkdownToSafeHtml('$$\\text{($\\Theta(n)$ termes)}$$');
+    expect(doubleDollar).toContain('<math');
+    expect(doubleDollar).not.toContain('class="katex-error"');
+
+    const bracket = await renderMarkdownToSafeHtml('\\[\n\\text{($\\Theta(n)$ termes)}\n\\]');
+    expect(bracket).toContain('<math');
+    expect(bracket).not.toContain('class="katex-error"');
+  });
+
+  it('renders equation and align environments', async () => {
+    const equation = await renderMarkdownToSafeHtml('\\begin{equation}\nx=1\n\\end{equation}');
+    expect(equation).toContain('<math');
+    expect(equation).toContain('display="block"');
+    expect(equation).not.toContain('class="katex-error"');
+    expect(parseMarkdownTokens(lexMarkdown('\\begin{equation}\nx=1\n\\end{equation}'))).toContain('<math');
+
+    const align = await renderMarkdownToSafeHtml('\\begin{align}\na&=b\\\\\nc&=d\n\\end{align}');
+    expect(align).toContain('<math');
+    expect(align).toContain('display="block"');
+    expect(align).not.toContain('class="katex-error"');
+
+    const matrix = await renderMarkdownToSafeHtml('\\begin{pmatrix}\n1&2\\\\\n3&4\n\\end{pmatrix}');
+    expect(matrix).toContain('<math');
+    expect(matrix).not.toContain('class="katex-error"');
+
+    const multline = await renderMarkdownToSafeHtml('\\begin{multline}\na+b+c\\\\\n=d\n\\end{multline}');
+    expect(multline).toContain('<math');
+    expect(multline).not.toContain('class="katex-error"');
+
+    const eqnarray = await renderMarkdownToSafeHtml('\\begin{eqnarray}\na&=&b\\\\\nc&=&d\n\\end{eqnarray}');
+    expect(eqnarray).toContain('<math');
+    expect(eqnarray).not.toContain('class="katex-error"');
   });
 
   it('does not let inline TeX span a blank line', async () => {

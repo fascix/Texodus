@@ -12,7 +12,7 @@ Download the latest release from the [releases page](https://github.com/w512/tex
 
 -   **CodeMirror 6 Editor**: Modern editing experience with markdown syntax highlighting, smart indentation, and large-document performance.
 -   **Live Markdown Preview**: Real-time, debounced rendering with full **GitHub Flavored Markdown (GFM)** support — tables, strikethrough, autolinks, and interactive task list checkboxes you can toggle directly in the preview.
--   **TeX Math**: Render inline `$...$` (including formulas that wrap across lines) and display `$$...$$` formulas with KaTeX in the live preview and HTML exports, and with MathJax vector SVG in PDF exports; a single `$` on its own line also opens display math. HTML output uses MathML, so exported pages stay self-contained with no stylesheet or font downloads.
+-   **TeX Math**: Render inline `$...$` / `\(...\)` and display `$$...$$` / `\[...\]` / `\begin{equation}` (plus common LaTeX environments such as `align`, `gather`, `multline`, and `pmatrix`) with KaTeX in the live preview and HTML exports, and with MathJax vector SVG in PDF exports. Formulas may wrap across lines, a single `$` on its own line opens display math, and `$` inside `\text{…}` or `\$` is preserved. HTML output uses MathML, so exported pages stay self-contained with no stylesheet or font downloads.
 -   **Mermaid Diagrams**: Render flowcharts, sequence diagrams, and other Mermaid graph types inline in the preview, themed to match the active color scheme.
 -   **Local Images**: Embed images with relative (`![](images/foo.png)`) or absolute filesystem paths — resolved against the open document's directory via Tauri's asset protocol.
 -   **Export**: Save the current document as standalone HTML or PDF.

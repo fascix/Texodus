@@ -52,18 +52,39 @@ interface MultilineKatexToken extends Tokens.Generic {
 // The upstream extension refuses newlines inside `$...$`, treats `$` on its
 // own line as inline rather than display math, and closes on nested `$` inside
 // `\text{…$…$…}`. All three are easy to hit while writing TeX in prose, so
-// this extension runs first and handles them; upstream still covers `$$...$$`.
+// this extension runs first and handles them.
 const INLINE_TEX_END = /[\s?!.,:;？！。，：)\]}]/;
-const BLOCK_DOLLAR_TEX = /^\$\n([\s\S]+?)\n\$(?:\n|$)/;
+const BLOCK_DOLLAR_TEX = /^\$[ \t]*\n([\s\S]+?)\n\$[ \t]*(?:\n|$)/;
+const BLOCK_BRACKET_TEX = /^\\\[[ \t]*(?:\n)?([\s\S]+?)\\\][ \t]*(?:\n|$)/;
 
-/** Finds the closing `$` of inline TeX. Dollars inside braces are part of
- *  `\text{…$…$…}` (math embedded in text mode), and escaped dollars are
+const TEX_ENVIRONMENTS = [
+  'equation\\*?', 'align\\*?', 'alignat\\*?', 'gather\\*?',
+  'aligned', 'gathered', 'split', 'multline\\*?', 'eqnarray\\*?',
+  'displaymath', 'matrix', 'pmatrix', 'bmatrix', 'Bmatrix',
+  'vmatrix', 'Vmatrix', 'cases', 'dcases', 'rcases', 'array', 'smallmatrix',
+];
+const BLOCK_ENVIRONMENT_TEX = new RegExp(
+  `^\\\\begin\\{(${TEX_ENVIRONMENTS.join('|')})\\}([\\s\\S]+?)\\\\end\\{\\1\\}[ \\t]*(?:\\n|$)`,
+);
+
+type TexDelimiter = { open: string; close: string; displayMode: boolean };
+
+const INLINE_TEX_DELIMITERS: TexDelimiter[] = [
+  { open: '$$', close: '$$', displayMode: true },
+  { open: '\\(', close: '\\)', displayMode: false },
+  { open: '\\[', close: '\\]', displayMode: true },
+  { open: '$', close: '$', displayMode: false },
+];
+
+/** Finds the closing delimiter of inline TeX. Dollars inside braces are part
+ *  of `\text{…$…$…}` (math embedded in text mode), and escaped delimiters are
  *  literal, so neither can close the formula. */
-function findInlineTexEnd(src: string): number | null {
+function findTexEnd(src: string, openLength: number, close: string): number | null {
   let braceDepth = 0;
-  for (let i = 1; i < src.length; i++) {
+  for (let i = openLength; i < src.length; i++) {
     const char = src[i];
     if (char === '\\') {
+      if (close !== '$' && braceDepth === 0 && src.startsWith(close, i)) return i;
       i++;
       continue;
     }
@@ -81,15 +102,46 @@ function findInlineTexEnd(src: string): number | null {
       if (src[next] === '\n') return null;
       continue;
     }
-    if (char !== '$' || braceDepth > 0) continue;
-    const next = src[i + 1];
-    if (next === undefined || INLINE_TEX_END.test(next)) return i;
+    if (braceDepth > 0 || !src.startsWith(close, i)) continue;
+    if (close === '$') {
+      const next = src[i + 1];
+      if (next !== undefined && !INLINE_TEX_END.test(next)) continue;
+    }
+    return i;
   }
   return null;
 }
 
+function findInlineTexStart(src: string): number | undefined {
+  let best: number | undefined;
+  for (const { open } of INLINE_TEX_DELIMITERS) {
+    for (let index = src.indexOf(open); index >= 0; index = src.indexOf(open, index + open.length)) {
+      if (index > 0 && src[index - 1] === '\\') continue;
+      if (best === undefined || index < best) best = index;
+    }
+  }
+  return best;
+}
+
+/** KaTeX lacks a few LaTeX environment wrappers that MathJax understands.
+ *  Normalize only those wrappers for the preview/HTML renderer. */
+function normalizeTexForKatex(tex: string): string {
+  return tex.replace(
+    /\\begin\{(displaymath|multline\*?|eqnarray\*?)\}([\s\S]*?)\\end\{\1\}/g,
+    (_match, env: string, body: string) => {
+      if (env === 'displaymath') return body;
+      if (env === 'multline') return `\\begin{gather}${body}\\end{gather}`;
+      if (env === 'multline*') return `\\begin{gather*}${body}\\end{gather*}`;
+      if (env === 'eqnarray' || env === 'eqnarray*') {
+        return `\\begin{aligned}${body}\\end{aligned}`;
+      }
+      return _match;
+    },
+  );
+}
+
 function renderKatexToken(token: MultilineKatexToken): string {
-  const html = katex.renderToString(token.text.trim(), {
+  const html = katex.renderToString(normalizeTexForKatex(token.text.trim()), {
     throwOnError: false,
     output: 'mathml',
     displayMode: token.displayMode,
@@ -118,23 +170,54 @@ function multilineKatex(): MarkedExtension {
         },
       },
       {
+        name: 'blockLatexBracket',
+        level: 'block',
+        tokenizer(src) {
+          const match = BLOCK_BRACKET_TEX.exec(src);
+          if (!match) return;
+          return {
+            type: 'blockKatexDollar',
+            raw: match[0],
+            text: match[1],
+            displayMode: true,
+          };
+        },
+        renderer(token) {
+          return renderKatexToken(token as MultilineKatexToken);
+        },
+      },
+      {
+        name: 'blockLatexEnvironment',
+        level: 'block',
+        tokenizer(src) {
+          const match = BLOCK_ENVIRONMENT_TEX.exec(src);
+          if (!match) return;
+          return {
+            type: 'blockKatexDollar',
+            raw: match[0],
+            text: match[0].trimEnd(),
+            displayMode: true,
+          };
+        },
+        renderer(token) {
+          return renderKatexToken(token as MultilineKatexToken);
+        },
+      },
+      {
         name: 'inlineKatexMultiline',
         level: 'inline',
-        start(src) {
-          for (let index = src.indexOf('$'); index >= 0; index = src.indexOf('$', index + 1)) {
-            if (index === 0 || src[index - 1] !== '\\') return index;
-          }
-          return undefined;
-        },
+        start: findInlineTexStart,
         tokenizer(src) {
-          if (src[0] !== '$' || src[1] === '$') return;
-          const end = findInlineTexEnd(src);
-          if (end === null || end === 1) return;
+          const delimiter = INLINE_TEX_DELIMITERS.find(({ open }) => src.startsWith(open));
+          if (!delimiter) return;
+          if (delimiter.open === '$' && src[1] === '$') return;
+          const end = findTexEnd(src, delimiter.open.length, delimiter.close);
+          if (end === null || end === delimiter.open.length) return;
           return {
             type: 'inlineKatexMultiline',
-            raw: src.slice(0, end + 1),
-            text: src.slice(1, end),
-            displayMode: false,
+            raw: src.slice(0, end + delimiter.close.length),
+            text: src.slice(delimiter.open.length, end),
+            displayMode: delimiter.displayMode,
           };
         },
         renderer(token) {
