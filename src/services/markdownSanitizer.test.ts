@@ -143,6 +143,26 @@ describe('renderMarkdownToSafeHtml', () => {
     expect(out).toContain('>Θ</mi>');
   });
 
+  it('renders block TeX containing inline math inside \\text', async () => {
+    const source = '$\nC_4(n)=\\Theta(1)+\\Theta(1)+\\cdots+\\Theta(1)\n\\quad\\text{($\\Theta(n)$ termes),}\n$';
+    const out = await renderMarkdownToSafeHtml(source);
+    expect(out).toContain('<math');
+    expect(out).toContain('display="block"');
+    expect(out).toContain('\\text{($\\Theta(n)$ termes),}');
+    expect(out).not.toContain('class="katex-error"');
+
+    const preview = parseMarkdownTokens(lexMarkdown(source));
+    expect(preview).toContain('<math');
+    expect(preview).not.toContain('class="katex-error"');
+  });
+
+  it('renders inline TeX containing dollar math inside \\text', async () => {
+    const out = await renderMarkdownToSafeHtml('Count: $\\text{($\\Theta(n)$ termes)}$');
+    expect(out).toContain('<math');
+    expect(out).toContain('\\text{($\\Theta(n)$ termes)}');
+    expect(out).not.toContain('class="katex-error"');
+  });
+
   it('does not let inline TeX span a blank line', async () => {
     const out = await renderMarkdownToSafeHtml('$\\Theta(n)\n\n$.');
     expect(out).not.toContain('class="katex"');

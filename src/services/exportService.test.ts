@@ -248,6 +248,20 @@ describe('buildPdfDocDefinition — TeX math', () => {
     expect(svgs[0].svg).toContain('<svg');
   });
 
+  it('renders display math containing inline math inside \\text', async () => {
+    const svgs = await mathSvgsFor(
+      '$\nC_4(n)=\\Theta(1)+\\Theta(1)+\\cdots+\\Theta(1)\n\\quad\\text{($\\Theta(n)$ termes),}\n$',
+    );
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
+  it('renders inline math containing inline math inside \\text', async () => {
+    const svgs = await mathSvgsFor('Count: $\\text{($\\Theta(n)$ termes)}$');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0].svg).toContain('<svg');
+  });
+
   it('keeps every formula when a paragraph has several', async () => {
     const svgs = await mathSvgsFor('$a$ and $b$');
     expect(svgs).toHaveLength(2);

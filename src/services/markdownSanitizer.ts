@@ -49,12 +49,44 @@ interface MultilineKatexToken extends Tokens.Generic {
   displayMode: boolean;
 }
 
-// The upstream extension refuses newlines inside `$...$`, and treats `$` on
-// its own line as inline rather than display math. Both are easy to hit while
-// writing TeX in a prose document, so this extension runs first and handles
-// those two shapes; upstream still covers `$$...$$`.
-const INLINE_TEX = /^\$((?:\\[\s\S]|(?!\n[ \t]*\n)[^\\$])+?)\$(?=[\s?!.,:;？！。，：)\]}]|$)/;
+// The upstream extension refuses newlines inside `$...$`, treats `$` on its
+// own line as inline rather than display math, and closes on nested `$` inside
+// `\text{…$…$…}`. All three are easy to hit while writing TeX in prose, so
+// this extension runs first and handles them; upstream still covers `$$...$$`.
+const INLINE_TEX_END = /[\s?!.,:;？！。，：)\]}]/;
 const BLOCK_DOLLAR_TEX = /^\$\n([\s\S]+?)\n\$(?:\n|$)/;
+
+/** Finds the closing `$` of inline TeX. Dollars inside braces are part of
+ *  `\text{…$…$…}` (math embedded in text mode), and escaped dollars are
+ *  literal, so neither can close the formula. */
+function findInlineTexEnd(src: string): number | null {
+  let braceDepth = 0;
+  for (let i = 1; i < src.length; i++) {
+    const char = src[i];
+    if (char === '\\') {
+      i++;
+      continue;
+    }
+    if (char === '{') {
+      braceDepth++;
+      continue;
+    }
+    if (char === '}' && braceDepth > 0) {
+      braceDepth--;
+      continue;
+    }
+    if (char === '\n') {
+      let next = i + 1;
+      while (src[next] === ' ' || src[next] === '\t') next++;
+      if (src[next] === '\n') return null;
+      continue;
+    }
+    if (char !== '$' || braceDepth > 0) continue;
+    const next = src[i + 1];
+    if (next === undefined || INLINE_TEX_END.test(next)) return i;
+  }
+  return null;
+}
 
 function renderKatexToken(token: MultilineKatexToken): string {
   const html = katex.renderToString(token.text.trim(), {
@@ -95,12 +127,13 @@ function multilineKatex(): MarkedExtension {
           return undefined;
         },
         tokenizer(src) {
-          const match = INLINE_TEX.exec(src);
-          if (!match) return;
+          if (src[0] !== '$' || src[1] === '$') return;
+          const end = findInlineTexEnd(src);
+          if (end === null || end === 1) return;
           return {
             type: 'inlineKatexMultiline',
-            raw: match[0],
-            text: match[1],
+            raw: src.slice(0, end + 1),
+            text: src.slice(1, end),
             displayMode: false,
           };
         },
