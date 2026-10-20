@@ -1,3 +1,12 @@
+## What I added (using agents)
+
+- TeX math in the live preview and in HTML/PDF exports.
+- Standard LaTeX delimiters and environments: `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, and `\begin{...}\end{...}`.
+- Multi-line TeX, formulas split across lines, nested `$` inside `\text{...}`, and escaped `\$`.
+- Correct TeX rendering in PDF exports.
+- Find and replace merged into the existing find bar, with an empty replacement supported.
+- Lazy KaTeX loading: documents without TeX do not load the math engine.
+
 # Texodus
 
 Texodus is a modern, fast, and beautiful Markdown editor built with **Tauri 2** and **Vue 3**. Designed for performance and a premium user experience, it combines the power of Rust with the flexibility of modern web technologies to provide a native-feeling desktop writing environment with robust support for the **GitHub Flavored Markdown (GFM)** standard.
