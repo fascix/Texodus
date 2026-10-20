@@ -7,8 +7,7 @@
  * rules can't quietly drift between the two surfaces.
  */
 import { marked, type MarkedExtension, type MarkedOptions, type Token, type Tokens } from 'marked';
-import markedKatex from 'marked-katex-extension';
-import katex from 'katex';
+import { ensureKatex, isKatexReady, renderTexToMathml } from './katexRenderer';
 import DOMPurify from 'dompurify';
 import { detectFrontmatterState, extractFrontmatterBody, splitFrontmatter } from '../utils/frontmatter';
 import { createHeadingSlugger, htmlToPlainText } from '../utils/headingSlug';
@@ -39,9 +38,9 @@ const slugger = createHeadingSlugger();
 // with explicit options (`options ?? this.defaults`, no merge), which silently
 // drops this renderer override — data-task disappears and preview checkbox
 // clicks stop mapping back to source markers.
-// MathML only: it needs no KaTeX stylesheet or font files, so the same output
-// works in the live preview and in self-contained HTML exports.
-marked.use(markedKatex({ throwOnError: false, output: 'mathml' }));
+// KaTeX emits MathML only: no stylesheet or font files, so the same output
+// works in the live preview and in self-contained HTML exports. The engine is
+// loaded lazily the first time a document actually contains TeX.
 
 interface MultilineKatexToken extends Tokens.Generic {
   type: 'inlineKatexMultiline' | 'blockKatexDollar';
@@ -141,11 +140,11 @@ function normalizeTexForKatex(tex: string): string {
 }
 
 function renderKatexToken(token: MultilineKatexToken): string {
-  const html = katex.renderToString(normalizeTexForKatex(token.text.trim()), {
-    throwOnError: false,
-    output: 'mathml',
-    displayMode: token.displayMode,
-  });
+  // HTML render paths await ensureTexRendering() first. Sync plain-text
+  // callers keep the source as a fallback until the lazy engine is ready.
+  const html = isKatexReady()
+    ? renderTexToMathml(normalizeTexForKatex(token.text.trim()), token.displayMode)
+    : escapeHtmlText(token.raw.trim());
   return token.type === 'blockKatexDollar' ? `${html}\n` : html;
 }
 
@@ -326,6 +325,23 @@ export function parseMarkdownTokens(tokens: Token[]): string {
   return marked.parser(tokens) as string;
 }
 
+/** True when the token tree contains one of the TeX tokens produced above. */
+function hasTexTokens(tokens: Token[]): boolean {
+  const containsTex = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(containsTex);
+    if (!value || typeof value !== 'object') return false;
+    const node = value as { type?: string };
+    if (node.type === 'inlineKatexMultiline' || node.type === 'blockKatexDollar') return true;
+    return Object.values(value).some(containsTex);
+  };
+  return containsTex(tokens);
+}
+
+/** Loads KaTeX only when the document actually needs to render TeX. */
+export async function ensureTexRendering(tokens: Token[]): Promise<void> {
+  if (hasTexTokens(tokens)) await ensureKatex();
+}
+
 /**
  * The visible text of an inline markdown fragment, produced by the same
  * pipeline the heading renderer uses. Callers that need to reproduce a
@@ -339,15 +355,12 @@ export function inlineMarkdownToPlainText(markdown: string): string {
   return htmlToPlainText(marked.parseInline(markdown) as string);
 }
 
-export function renderMarkdownToHtml(markdown: string): string {
-  startDocument();
-  return marked.parse(markdown, MARKED_OPTIONS);
-}
-
 export async function renderMarkdownToSafeHtml(markdown: string): Promise<string> {
   const { frontmatterYaml, body } = splitRenderableFrontmatter(markdown);
+  const tokens = lexMarkdown(body);
+  await ensureTexRendering(tokens);
   const frontmatterHtml = frontmatterYaml !== null ? renderFrontmatterHtml(frontmatterYaml) : '';
-  return sanitizeMarkdownHtml(frontmatterHtml + renderMarkdownToHtml(body));
+  return sanitizeMarkdownHtml(frontmatterHtml + parseMarkdownTokens(tokens));
 }
 
 /**

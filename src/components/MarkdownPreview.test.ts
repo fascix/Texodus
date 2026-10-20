@@ -76,9 +76,10 @@ describe('in-page anchors', () => {
 describe('TeX preview', () => {
   it('renders inline math in the preview DOM', async () => {
     const wrapper = await mountPreview('Area: $\\pi r^2$');
-    const math = wrapper.element.querySelector('math');
-    expect(math).not.toBeNull();
-    expect(math?.querySelector('msup')).not.toBeNull();
+    await vi.waitFor(() => {
+      expect(wrapper.element.querySelector('math')).not.toBeNull();
+    });
+    expect(wrapper.element.querySelector('math msup')).not.toBeNull();
     wrapper.unmount();
   });
 });

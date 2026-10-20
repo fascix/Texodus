@@ -15,7 +15,7 @@ import { useSettingsStore } from '../stores/settings';
 import { useMarkdownPreview } from '../composables/useMarkdownPreview';
 import { useDocumentSearch } from '../composables/useDocumentSearch';
 import { useResolvedTheme } from '../composables/useResolvedTheme';
-import { lexMarkdown, parseMarkdownTokens, renderFrontmatterHtml, sanitizeMarkdownHtml, splitRenderableFrontmatter } from '../services/markdownSanitizer';
+import { ensureTexRendering, lexMarkdown, parseMarkdownTokens, renderFrontmatterHtml, sanitizeMarkdownHtml, splitRenderableFrontmatter } from '../services/markdownSanitizer';
 import { renderMermaidBlocks } from '../services/mermaidRenderer';
 import { ensurePrismLanguages, highlightUnder } from '../services/prismHighlighter';
 import { type Token } from 'marked';
@@ -113,6 +113,9 @@ const renderMarkdown = async () => {
   // Lex first so we can record per-block source line numbers, then parse the
   // already-tokenised tree (avoids tokenising twice via marked.parse).
   const tokens = lexMarkdown(body);
+  await ensureTexRendering(tokens);
+  if (generation !== renderGeneration || !previewRef.value) return;
+
   const blockLines = collectBlockLines(tokens, bodyLineOffset);
   if (frontmatterYaml !== null) blockLines.unshift(0);
   const html = (frontmatterYaml !== null ? renderFrontmatterHtml(frontmatterYaml) : '')

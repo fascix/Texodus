@@ -2,7 +2,7 @@ import { save, message } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, writeFile, readFile } from "@tauri-apps/plugin-fs";
 import { type Token, type Tokens } from "marked";
 import type { Content, ContentText, Decoration, TDocumentDefinitions } from "pdfmake/interfaces";
-import { lexMarkdown, renderFrontmatterHtml, renderMarkdownToHtml, sanitizeMarkdownHtml, splitRenderableFrontmatter } from "./markdownSanitizer";
+import { lexMarkdown, renderMarkdownToSafeHtml, splitRenderableFrontmatter } from "./markdownSanitizer";
 import { renderMermaidBlocks, renderMermaidSvg } from "./mermaidRenderer";
 import { collectHeadingAnchors, type HeadingAnchors } from "./tableOfContents";
 import { anchorFragment } from "../utils/headingSlug";
@@ -163,11 +163,8 @@ async function inlineLocalImages(container: HTMLElement, filePath: string | null
  * doesn't violate the app's strict CSP.
  */
 export async function renderExportHtml(markdown: string, title: string, filePath: string | null = null): Promise<string> {
-  // Same frontmatter split as the live preview — without it marked misparses
-  // the block as hr + setext h2 (no Prism in exports, so the block is plain).
-  const { frontmatterYaml, body } = splitRenderableFrontmatter(markdown);
-  const frontmatterHtml = frontmatterYaml !== null ? renderFrontmatterHtml(frontmatterYaml) : "";
-  const bodyHtml = sanitizeMarkdownHtml(frontmatterHtml + renderMarkdownToHtml(body));
+  // Same frontmatter split and lazy math load as the live preview.
+  const bodyHtml = await renderMarkdownToSafeHtml(markdown);
 
   // Inline mermaid as SVG via a detached container so the export file has
   // zero external dependencies. The container is never attached to the DOM

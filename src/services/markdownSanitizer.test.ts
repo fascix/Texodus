@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
   lexMarkdown,
   parseMarkdownTokens,
@@ -7,6 +7,11 @@ import {
   sanitizeMarkdownHtml,
   splitRenderableFrontmatter,
 } from './markdownSanitizer';
+import { ensureKatex } from './katexRenderer';
+
+beforeAll(async () => {
+  await ensureKatex();
+});
 
 describe('sanitizeMarkdownHtml', () => {
   it('strips script tags', () => {
