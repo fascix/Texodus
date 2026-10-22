@@ -8,6 +8,9 @@ import {
   SIDEBAR_MAX_WIDTH,
   SPLIT_RATIO_MIN,
   SPLIT_RATIO_MAX,
+  CONTENT_WIDTHS,
+  CONTENT_WIDTH_MIN,
+  CONTENT_WIDTH_MAX,
 } from './settings';
 
 beforeEach(() => {
@@ -34,6 +37,29 @@ describe('settings store', () => {
     expect(store.lineHeight).toBe(1.2);
     store.setLineHeight(1.7000000000000002);
     expect(store.lineHeight).toBe(1.7);
+  });
+
+  it('clamps the text column width and snaps it to the stepper options', () => {
+    const store = useSettingsStore();
+    expect(store.contentWidthMode).toBe('fixed');
+    expect(store.contentWidth).toBe(780);
+    store.setContentWidth(99999);
+    expect(store.contentWidth).toBe(CONTENT_WIDTH_MAX);
+    store.setContentWidth(10);
+    expect(store.contentWidth).toBe(CONTENT_WIDTH_MIN);
+    store.setContentWidth(913);
+    expect(store.contentWidth).toBe(920);
+    expect(CONTENT_WIDTHS).toContain(store.contentWidth);
+    store.setContentWidth(Number.NaN);
+    expect(store.contentWidth).toBe(920);
+  });
+
+  it('toggles the text column between full and fixed width', () => {
+    const store = useSettingsStore();
+    store.toggleContentWidthMode();
+    expect(store.contentWidthMode).toBe('full');
+    store.toggleContentWidthMode();
+    expect(store.contentWidthMode).toBe('fixed');
   });
 
   it('accepts search highlight colors with or without a leading #, normalised', () => {
@@ -190,21 +216,25 @@ describe('settings validation on load', () => {
       fontSize: 9999,
       lineHeight: -3,
       sidebarWidth: 10000,
+      contentWidth: 5,
     }));
     const store = useSettingsStore();
     expect(store.fontSize).toBe(FONT_SIZE_MAX);
     expect(store.lineHeight).toBe(1.2);
     expect(store.sidebarWidth).toBe(SIDEBAR_MAX_WIDTH);
+    expect(store.contentWidth).toBe(CONTENT_WIDTH_MIN);
   });
 
   it('rounds numbers the way the setters do', () => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
       fontSize: 14.6,
       lineHeight: 1.7000000000000002,
+      contentWidth: 787,
     }));
     const store = useSettingsStore();
     expect(store.fontSize).toBe(15);
     expect(store.lineHeight).toBe(1.7);
+    expect(store.contentWidth).toBe(780);
   });
 
   it('rejects values outside the allowed enums', () => {
@@ -215,6 +245,7 @@ describe('settings validation on load', () => {
       // and misroute OS "Open With" files.
       documentMode: 'panes',
       documentTitleMode: 'metadata-only',
+      contentWidthMode: 'wide',
     }));
     localStorage.setItem('texodus.layoutMode.v1', JSON.stringify('zoomed'));
     const store = useSettingsStore();
@@ -222,6 +253,7 @@ describe('settings validation on load', () => {
     expect(store.colorScheme).toBe('default');
     expect(store.documentMode).toBe('windows');
     expect(store.documentTitleMode).toBe('filename');
+    expect(store.contentWidthMode).toBe('fixed');
     expect(store.layoutMode).toBe('split');
   });
 
@@ -235,6 +267,7 @@ describe('settings validation on load', () => {
       searchHighlightColor: 'not-a-color',
       recentFiles: 'nope',
       lastWorkspacePath: 42,
+      contentWidth: '900',
     }));
     const store = useSettingsStore();
     expect(store.fontSize).toBe(14);
@@ -245,6 +278,7 @@ describe('settings validation on load', () => {
     expect(store.searchHighlightColor).toBe('#ffd54a');
     expect(store.recentFiles).toEqual([]);
     expect(store.lastWorkspacePath).toBeNull();
+    expect(store.contentWidth).toBe(780);
   });
 
   it('normalises the stored highlight color and cleans the recent-files list', () => {
@@ -269,6 +303,8 @@ describe('settings validation on load', () => {
       sidebarWidth: 300,
       autoSave: true,
       lastWorkspacePath: '/work',
+      contentWidthMode: 'full',
+      contentWidth: 1040,
     }));
     const store = useSettingsStore();
     expect(store.themeMode).toBe('dark');
@@ -280,5 +316,7 @@ describe('settings validation on load', () => {
     expect(store.sidebarWidth).toBe(300);
     expect(store.autoSave).toBe(true);
     expect(store.lastWorkspacePath).toBe('/work');
+    expect(store.contentWidthMode).toBe('full');
+    expect(store.contentWidth).toBe(1040);
   });
 });

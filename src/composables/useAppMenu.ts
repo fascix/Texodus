@@ -274,6 +274,13 @@ async function buildAppMenu(store: EditorStore, settingsStore: SettingsStore): P
         accelerator: 'CmdOrCtrl+Alt+P',
         action: () => { settingsStore.setLayoutMode('preview'); },
       }),
+      await PredefinedMenuItem.new({ item: 'Separator' }),
+      await MenuItem.new({
+        id: mid('view-toggle-full-width'),
+        text: 'Toggle Full-Width Text',
+        accelerator: 'CmdOrCtrl+Alt+W',
+        action: () => { settingsStore.toggleContentWidthMode(); },
+      }),
     ],
   });
 

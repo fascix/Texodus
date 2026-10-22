@@ -154,6 +154,39 @@
           </div>
 
           <div class="settings-row">
+            <label>Text width</label>
+            <div class="segmented" role="radiogroup" aria-label="Text width">
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="settingsStore.contentWidthMode === 'full'"
+                :class="{ active: settingsStore.contentWidthMode === 'full' }"
+                @click="settingsStore.setContentWidthMode('full')"
+              >Full</button>
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="settingsStore.contentWidthMode === 'fixed'"
+                :class="{ active: settingsStore.contentWidthMode === 'fixed' }"
+                @click="settingsStore.setContentWidthMode('fixed')"
+              >Fixed</button>
+            </div>
+          </div>
+
+          <div v-if="settingsStore.contentWidthMode === 'fixed'" class="settings-row">
+            <label for="content-width">Column width</label>
+            <SettingsStepper
+              id="content-width"
+              label="column width"
+              :model-value="settingsStore.contentWidth"
+              :options="CONTENT_WIDTHS"
+              :step="CONTENT_WIDTH_STEP"
+              :format="(w: number) => `${w} px`"
+              @update:model-value="settingsStore.setContentWidth($event)"
+            />
+          </div>
+
+          <div class="settings-row">
             <label for="search-color">Search highlight</label>
             <input
               id="search-color"
@@ -197,6 +230,8 @@ import {
   PREVIEW_FONTS,
   FONT_SIZES,
   LINE_HEIGHTS,
+  CONTENT_WIDTHS,
+  CONTENT_WIDTH_STEP,
 } from '../stores/settings';
 import SettingsStepper from './SettingsStepper.vue';
 import ColorSchemePicker from './ColorSchemePicker.vue';
