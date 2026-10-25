@@ -115,7 +115,7 @@ describe('hex color swatches', () => {
       'rgb(49, 95, 112)',
       'rgb(82, 100, 108)',
     ]);
-    expect(Array.from(wrapper.element.querySelectorAll('td code')).map((code) => code.textContent)).toEqual([
+    expect(Array.from(wrapper.element.querySelectorAll('td code') as NodeListOf<HTMLElement>).map((code) => code.textContent)).toEqual([
       '#315F70',
       '#52646C',
     ]);

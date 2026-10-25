@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
+import { history, undo } from '@codemirror/commands';
 
 // useMarkdownPreview is called at module level in useDocumentSearch,
 // so we need mock functions that persist across the module's lifetime.
@@ -23,7 +24,7 @@ function makeView(doc: string): EditorView {
   const div = document.createElement('div');
   document.body.appendChild(div);
   return new EditorView({
-    state: EditorState.create({ doc }),
+    state: EditorState.create({ doc, extensions: history() }),
     parent: div,
   });
 }
@@ -217,6 +218,39 @@ describe('useDocumentSearch', () => {
   });
 
   describe('replace', () => {
+    it('undoes replace-all as one edit', () => {
+      const view = setView('foo foo foo');
+      views.push(view);
+      const search = getSearch();
+      search.open();
+      search.setQuery('foo');
+      search.setReplacement('bar');
+      search.replaceAll();
+      expect(view.state.doc.toString()).toBe('bar bar bar');
+      expect(undo(view)).toBe(true);
+      expect(view.state.doc.toString()).toBe('foo foo foo');
+    });
+    it.each([
+      { source: 'foobar', pattern: '(?<=foo)bar', all: false, replacement: 'X', expected: 'fooX', count: 1 },
+      { source: 'barfoo', pattern: 'bar(?=foo)', all: false, replacement: 'X', expected: 'Xfoo', count: 1 },
+      { source: 'foo\nfoo', pattern: '^foo', all: true, replacement: 'X', expected: 'X\nX', count: 2 },
+      { source: 'foo\nfoo', pattern: 'foo$', all: true, replacement: 'X', expected: 'X\nX', count: 2 },
+      { source: 'ab', pattern: '(?<first>a)(b)', all: false, replacement: '$2$<first>$$', expected: 'ba$', count: 1 },
+      { source: 'foo', pattern: '(f)(x)?oo', all: true, replacement: '$2$1', expected: 'f', count: 1 },
+    ])('replaces the displayed matches for $pattern', ({ source, pattern, all, replacement, expected, count }) => {
+      const view = setView(source);
+      views.push(view);
+      const search = getSearch();
+      search.open();
+      search.setRegex(true);
+      search.setQuery(pattern);
+      search.setReplacement(replacement);
+      expect(search.matchCount.value).toBe(count);
+      if (all) search.replaceAll();
+      else search.replaceCurrent();
+      expect(view.state.doc.toString()).toBe(expected);
+    });
+
     it('replaces the current match and advances to the next one', () => {
       const view = setView('foo bar foo baz foo');
       views.push(view);

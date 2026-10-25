@@ -45,8 +45,14 @@ const matchCount = ref(0);
 const currentIndex = ref(0); // 1-based; 0 = no current match
 const hasError = ref(false); // invalid regular expression
 const focusNonce = ref(0);   // bumped to (re)focus the input
+const replaceFocus = ref(false);
 
-let editorMatches: { from: number; to: number }[] = [];
+interface EditorMatch {
+  from: number;
+  to: number;
+  match?: RegExpExecArray;
+}
+let editorMatches: EditorMatch[] = [];
 let previewMatches: Range[] = [];
 
 function escapeRegExp(s: string): string {
@@ -93,13 +99,13 @@ function makeQuery(): SearchQuery {
 
 // ── Editor target ──────────────────────────────────────────────────────────
 
-function collectEditorMatches(query: SearchQuery, state: EditorState): { from: number; to: number }[] {
-  const out: { from: number; to: number }[] = [];
-  const cursor = query.getCursor(state) as Iterator<{ from: number; to: number }>;
+function collectEditorMatches(query: SearchQuery, state: EditorState): EditorMatch[] {
+  const out: EditorMatch[] = [];
+  const cursor = query.getCursor(state) as Iterator<EditorMatch>;
   let v = cursor.next();
   let guard = 0;
   while (!v.done && guard++ < 200000) {
-    out.push({ from: v.value.from, to: v.value.to });
+    out.push({ from: v.value.from, to: v.value.to, match: v.value.match });
     v = cursor.next();
   }
   return out;
@@ -307,20 +313,32 @@ function apply(reselect: boolean): void {
   }
 }
 
-function replacementFor(matched: string): string {
+// Expand replacements from the exact cursor result used for highlighting.
+// Re-running a regex on a substring loses lookarounds and line context.
+function replacementFor(result: EditorMatch, source: string): string {
   if (!useRegex.value) return replacementText.value;
-  const re = makeRegex();
-  if (!re) return replacementText.value;
-  re.lastIndex = 0;
-  return matched.replace(re, replacementText.value);
+  const captures = result.match;
+  return replacementText.value.replace(/\$(\$|&|`|'|<[^>]*>|\d{1,2})/g, (raw, name: string) => {
+    if (name === '$') return '$';
+    if (name === '&') return source.slice(result.from, result.to);
+    if (name === '`') return source.slice(0, result.from);
+    if (name === "'") return source.slice(result.to);
+    if (name.startsWith('<')) return captures?.groups
+      ? captures.groups[name.slice(1, -1)] ?? '' : raw;
+    const index = Number(name);
+    if (captures && index > 0 && index < captures.length) return captures[index] ?? '';
+    const first = Number(name[0]);
+    return captures && name.length === 2 && first > 0 && first < captures.length
+      ? (captures[first] ?? '') + name[1] : raw;
+  });
 }
 
 function replaceCurrent(): void {
   const view = getEditorView();
   if (!view) return;
   const match = editorMatches[currentIndex.value - 1];
-  if (!match || match.from === match.to) return;
-  const replacement = replacementFor(view.state.sliceDoc(match.from, match.to));
+  if (!match) return;
+  const replacement = replacementFor(match, view.state.doc.toString());
   view.dispatch({
     changes: { from: match.from, to: match.to, insert: replacement },
     selection: { anchor: match.from + replacement.length },
@@ -331,18 +349,16 @@ function replaceCurrent(): void {
 
 function replaceAll(): void {
   const view = getEditorView();
-  const re = makeRegex();
-  if (!view || !re || editorMatches.length === 0) return;
+  if (!view || editorMatches.length === 0) return;
 
   const doc = view.state.doc;
   const source = doc.toString();
-  const next = useRegex.value
-    ? source.replace(re, replacementText.value)
-    : source.replace(re, () => replacementText.value);
-  if (next === source) return;
+  const changes = editorMatches.map((match) => ({
+    from: match.from, to: match.to, insert: replacementFor(match, source),
+  }));
 
   view.dispatch({
-    changes: { from: 0, to: doc.length, insert: next },
+    changes,
     selection: { anchor: 0 },
     userEvent: 'input.replace.all',
   });
@@ -364,7 +380,8 @@ function step(forward: boolean): void {
   }
 }
 
-function openSearch(): void {
+function openSearch(replace = false): void {
+  replaceFocus.value = replace;
   isOpen.value = true;
   focusNonce.value++;
   apply(true);
@@ -372,7 +389,7 @@ function openSearch(): void {
 
 function openReplace(): void {
   showReplace.value = true;
-  openSearch();
+  openSearch(true);
 }
 
 function closeSearch(): void {
@@ -385,8 +402,8 @@ export function useDocumentSearch() {
   return {
     isOpen, queryText, caseSensitive, useRegex, wholeWord,
     replacementText, showReplace, canReplace,
-    matchCount, currentIndex, hasError, focusNonce,
-    open: openSearch,
+    matchCount, currentIndex, hasError, focusNonce, replaceFocus,
+    open: () => openSearch(),
     openReplace,
     close: closeSearch,
     setQuery(v: string) { queryText.value = v; apply(true); },

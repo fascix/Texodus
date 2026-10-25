@@ -1,5 +1,5 @@
 /**
- * Lazy Prism singleton for the preview pane (§6.2).
+ * Lazy Prism singleton shared by the preview pane (§6.2) and exports.
  *
  * The `prismjs` core entry ships only markup/css/clike/javascript, while the
  * editor pane lazy-loads full language support via @codemirror/language-data.
@@ -21,10 +21,7 @@ let prismPromise: Promise<PrismInstance> | null = null;
 
 function loadPrismCore(): Promise<PrismInstance> {
   if (!prismPromise) {
-    prismPromise = Promise.all([
-      import('prismjs'),
-      import('../themes/prism.css'),
-    ]).then(([mod]) => {
+    prismPromise = import('prismjs').then((mod) => {
       prism = mod.default;
       return prism;
     });
@@ -112,9 +109,9 @@ const COMPONENTS: Record<string, ComponentDef> = {
 const componentLoads = new Map<string, Promise<void>>();
 
 async function ensureLanguage(mod: PrismInstance, rawLang: string): Promise<void> {
-  const lang = LANGUAGE_ALIASES[rawLang] ?? rawLang;
+  const lang = Object.hasOwn(LANGUAGE_ALIASES, rawLang) ? LANGUAGE_ALIASES[rawLang] : rawLang;
   if (!mod.languages[lang]) {
-    const def = COMPONENTS[lang];
+    const def = Object.hasOwn(COMPONENTS, lang) ? COMPONENTS[lang] : undefined;
     if (!def) return; // not a language we bundle — leave the block plain
     let load = componentLoads.get(lang);
     if (!load) {
@@ -153,8 +150,19 @@ function collectLanguages(container: HTMLElement): Set<string> {
  */
 export async function ensurePrismLanguages(container: HTMLElement): Promise<void> {
   const langs = collectLanguages(container);
-  const mod = await loadPrismCore();
+  const [mod] = await Promise.all([loadPrismCore(), import('../themes/prism.css')]);
   await Promise.all([...langs].map((lang) => ensureLanguage(mod, lang)));
+}
+
+/** Tokenizes a fence using the same languages and aliases as the preview.
+ *  Plain/unknown languages stay as text. Export callers don't load app CSS. */
+export async function tokenizeCode(text: string, info?: string): Promise<(string | import('prismjs').PrismToken)[]> {
+  const lang = info?.trim().split(/\s+/)[0].toLowerCase();
+  if (!lang || lang === 'mermaid') return [text];
+  const mod = await loadPrismCore();
+  await ensureLanguage(mod, lang);
+  const grammar = Object.hasOwn(mod.languages, lang) ? mod.languages[lang] : undefined;
+  return grammar && typeof grammar === 'object' ? mod.tokenize(text, grammar) : [text];
 }
 
 /** Highlights every fenced block under `container`. Synchronous; a no-op

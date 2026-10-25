@@ -20,6 +20,7 @@ vi.mock('../composables/useDocumentSearch', async () => {
     currentIndex: ref(2),
     hasError: ref(false),
     focusNonce: ref(0),
+    replaceFocus: ref(false),
     close: vi.fn(),
     setQuery: vi.fn((value: string) => { queryText.value = value; }),
     setCaseSensitive: vi.fn(),
@@ -48,9 +49,20 @@ beforeEach(() => {
   search.replacementText.value = '';
   search.showReplace.value = false;
   search.canReplace.value = true;
+  search.replaceFocus.value = false;
 });
 
 describe('SearchBar', () => {
+  it('focuses find when Cmd/Ctrl+F is used with the replace row visible', async () => {
+    const search = useDocumentSearch();
+    search.showReplace.value = true;
+    const wrapper = mount(SearchBar, { attachTo: document.body });
+    search.focusNonce.value++;
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect(document.activeElement).toBe(wrapper.get('.searchbar-find').element);
+    wrapper.unmount();
+  });
   it('renders the current match count and forwards query edits', async () => {
     const wrapper = mount(SearchBar);
     expect(wrapper.get('.searchbar-count').text()).toBe('2/3');

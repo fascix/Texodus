@@ -4,11 +4,15 @@ import { type Token, type Tokens } from "marked";
 import type { Content, ContentText, Decoration, TDocumentDefinitions } from "pdfmake/interfaces";
 import { lexMarkdown, normalizeHexColor, renderMarkdownToSafeHtml, splitRenderableFrontmatter } from "./markdownSanitizer";
 import { renderMermaidBlocks, renderMermaidSvg } from "./mermaidRenderer";
+import { highlightExportCode, highlightExportCodeBlocks } from "./exportCodeHighlighter";
 import { collectHeadingAnchors, type HeadingAnchors } from "./tableOfContents";
 import { anchorFragment } from "../utils/headingSlug";
 import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from "../utils/path";
 import { showToast } from "../utils/toast";
 import { applyLineEnding, defaultLineEnding } from '../utils/lineEndings';
+import { inlineMathSlot, registerInlineMath, renderPdfWithInlineMath, type InlineMath } from './pdfInlineMath';
+
+const HEADING_FONT_SIZES = [22, 18, 15, 13, 11, 10];
 
 type PdfMakeModule = {
   createPdf: (def: TDocumentDefinitions) => { getBlob: () => Promise<Blob> };
@@ -172,6 +176,7 @@ export async function renderExportHtml(markdown: string, title: string, filePath
   const tempContainer = document.createElement("div");
   tempContainer.innerHTML = bodyHtml;
   await renderMermaidBlocks(tempContainer, { theme: "default" });
+  await highlightExportCodeBlocks(tempContainer);
   await inlineLocalImages(tempContainer, filePath);
   const finalBody = tempContainer.innerHTML;
 
@@ -271,9 +276,9 @@ interface MermaidPngResult {
   height: number;
 }
 
-// Per-export map of code-token → rendered PNG. A WeakMap avoids the previous
-// pattern of mutating `marked` tokens with `(token as any).mermaidPngUrl`.
-type MermaidPngMap = WeakMap<Tokens.Code, MermaidPngResult>;
+// Pre-render code blocks before the synchronous token walk: highlighted text
+// for normal fences, PNGs for Mermaid. Never mutate the marked tokens.
+type PdfCodeBlockMap = WeakMap<Tokens.Code, Content>;
 
 interface EmbeddedImage {
   dataUrl: string;
@@ -297,11 +302,15 @@ interface EmbeddedMath {
   svg: string;
   width: number;
   displayMode: boolean;
+  height: number;
+  descent: number;
+  id: string;
+  inlineAssets: Map<string, InlineMath>;
 }
 
 // Per-export map of math-token → rendered SVG. Populated up-front so the
 // synchronous token→content walk can emit pdfmake's vector `svg` nodes.
-type MathSvgMap = WeakMap<Token, EmbeddedMath>;
+type MathSvgMap = Map<Token, EmbeddedMath>;
 
 const MATH_TOKEN_TYPES = new Set<string>([
   'inlineKatex',
@@ -417,7 +426,9 @@ function inlineWithEmbedsToContent(
   let run: Token[] = [];
   const flush = () => {
     if (run.length === 0) return;
-    const inline = inlineTokensToContent(run, anchors);
+    const fontSize = style?.match(/^h([1-6])$/)
+      ? HEADING_FONT_SIZES[Number(style[1]) - 1] : 11;
+    const inline = inlineTokensToContent(run, anchors, mathSvgs, { fontSize });
     if (inline.length > 0) out.push(style ? { text: inline, style } : { text: inline });
     run = [];
   };
@@ -428,7 +439,7 @@ function inlineWithEmbedsToContent(
       flush();
       const width = Math.min(495, embedded.width || 495);
       out.push({ image: embedded.dataUrl, width, margin: [0, 6, 0, 6] });
-    } else if (math) {
+    } else if (math?.displayMode) {
       flush();
       out.push(mathToContent(math));
     } else {
@@ -505,6 +516,7 @@ function linkStyleFor(token: Tokens.Link, inherited: InlineStyle, anchors: Headi
 function inlineTokensToContent(
   tokens: Token[] | undefined,
   anchors: HeadingAnchors,
+  mathSvgs: MathSvgMap,
   inherited: InlineStyle = {},
 ): Content[] {
   if (!tokens) return [];
@@ -515,18 +527,18 @@ function inlineTokensToContent(
     switch (t.type) {
       case "text": {
         const tt = t as Tokens.Text;
-        if (tt.tokens) out.push(...inlineTokensToContent(tt.tokens, anchors, inherited));
+        if (tt.tokens) out.push(...inlineTokensToContent(tt.tokens, anchors, mathSvgs, inherited));
         else leaf(tt.text);
         break;
       }
       case "strong":
-        out.push(...inlineTokensToContent((t as Tokens.Strong).tokens, anchors, { ...inherited, bold: true }));
+        out.push(...inlineTokensToContent((t as Tokens.Strong).tokens, anchors, mathSvgs, { ...inherited, bold: true }));
         break;
       case "em":
-        out.push(...inlineTokensToContent((t as Tokens.Em).tokens, anchors, { ...inherited, italics: true }));
+        out.push(...inlineTokensToContent((t as Tokens.Em).tokens, anchors, mathSvgs, { ...inherited, italics: true }));
         break;
       case "del":
-        out.push(...inlineTokensToContent((t as Tokens.Del).tokens, anchors, {
+        out.push(...inlineTokensToContent((t as Tokens.Del).tokens, anchors, mathSvgs, {
           ...inherited,
           decoration: withDecoration(inherited, "lineThrough"),
         }));
@@ -546,7 +558,7 @@ function inlineTokensToContent(
       }
       case "link": {
         const lt = t as Tokens.Link;
-        out.push(...inlineTokensToContent(lt.tokens, anchors, linkStyleFor(lt, inherited, anchors)));
+        out.push(...inlineTokensToContent(lt.tokens, anchors, mathSvgs, linkStyleFor(lt, inherited, anchors)));
         break;
       }
       case "br":
@@ -563,6 +575,19 @@ function inlineTokensToContent(
       case "html":
         break;
       default: {
+        const math = mathSvgs.get(t);
+        if (math) {
+          const fontSize = inherited.fontSize ?? 11;
+          const scale = Math.min(fontSize / (math.displayMode ? 13 : 11), 495 / math.width, 700 / math.height);
+          const asset: InlineMath = {
+            svg: math.svg, width: math.width * scale, height: math.height * scale,
+            descent: math.descent * scale, fontSize,
+            link: inherited.link, linkToDestination: inherited.linkToDestination,
+          };
+          math.inlineAssets.set(math.id, asset);
+          out.push(inlineMathSlot(asset, math.id));
+          break;
+        }
         const txt = (t as { text?: string }).text;
         if (txt) leaf(txt);
       }
@@ -573,7 +598,7 @@ function inlineTokensToContent(
 
 function blockTokensToContent(
   tokens: Token[],
-  mermaidPngs: MermaidPngMap,
+  codeBlocks: PdfCodeBlockMap,
   images: ImageMap,
   mathSvgs: MathSvgMap,
   anchors: HeadingAnchors,
@@ -608,7 +633,7 @@ function blockTokensToContent(
       case "list": {
         const l = token as Tokens.List;
         const items: Content[] = l.items.map((item) => {
-          const inner = blockTokensToContent(item.tokens, mermaidPngs, images, mathSvgs, anchors);
+          const inner = blockTokensToContent(item.tokens, codeBlocks, images, mathSvgs, anchors);
           const flat: Content = inner.length === 1 ? inner[0] : { stack: inner };
           if (item.task) {
             const marker = item.checked ? "☑  " : "☐  ";
@@ -621,23 +646,12 @@ function blockTokensToContent(
       }
       case "code": {
         const c = token as Tokens.Code;
-        const png = mermaidPngs.get(c);
-        if (png) {
-          const width = Math.min(495, png.width || 495);
-          out.push({
-            image: png.pngUrl,
-            width,
-            margin: [0, 6, 0, 6],
-            alignment: "center",
-          });
-        } else {
-          out.push({ text: c.text, style: "code", preserveLeadingSpaces: true });
-        }
+        out.push(codeBlocks.get(c) ?? { text: c.text, style: "code", preserveLeadingSpaces: true });
         break;
       }
       case "blockquote": {
         const b = token as Tokens.Blockquote;
-        out.push({ stack: blockTokensToContent(b.tokens, mermaidPngs, images, mathSvgs, anchors), style: "blockquote", margin: [12, 4, 0, 4] });
+        out.push({ stack: blockTokensToContent(b.tokens, codeBlocks, images, mathSvgs, anchors), style: "blockquote", margin: [12, 4, 0, 4] });
         break;
       }
       case "hr":
@@ -754,14 +768,13 @@ function svgToPng(svgString: string): Promise<MermaidPngResult> {
 }
 
 /**
- * Walks the token tree once, collecting every fenced mermaid code block.
- * Replaces the previous two-pass approach (checkHasMermaid + preRender).
+ * Collect code blocks at every nesting level, including lists and quotes.
  */
-function collectMermaidCodeTokens(tokens: Token[]): Tokens.Code[] {
+function collectCodeTokens(tokens: Token[]): Tokens.Code[] {
   const out: Tokens.Code[] = [];
   const walk = (list: Token[]) => {
     for (const t of list) {
-      if (t.type === "code" && (t as Tokens.Code).lang === "mermaid") {
+      if (t.type === "code") {
         out.push(t as Tokens.Code);
       }
       if (t.type === "list") {
@@ -806,7 +819,7 @@ function collectMathTokens(tokens: Token[]): MathToken[] {
 
 /** Converts MathJax's 1000-units-per-em viewBox into a print width at the
  *  document's font size. */
-function measureMathSvg(svg: string, displayMode: boolean): number {
+function measureMathSvg(svg: string, displayMode: boolean): { width: number; height: number; descent: number } {
   const viewBox = new DOMParser()
     .parseFromString(svg, "image/svg+xml")
     .documentElement.getAttribute("viewBox")
@@ -814,7 +827,11 @@ function measureMathSvg(svg: string, displayMode: boolean): number {
     .map(Number);
   const widthUnits = viewBox?.length === 4 ? viewBox[2] : 3000;
   const fontSize = displayMode ? 13 : 11;
-  return Math.max(1, (widthUnits / 1000) * fontSize);
+  return {
+    width: Math.max(1, (widthUnits / 1000) * fontSize),
+    height: Math.max(1, ((viewBox?.[3] ?? 1000) / 1000) * fontSize),
+    descent: Math.max(0, ((viewBox?.[1] ?? -800) + (viewBox?.[3] ?? 1000)) / 1000 * fontSize),
+  };
 }
 
 async function preRenderMathSvgs(
@@ -823,7 +840,8 @@ async function preRenderMathSvgs(
 ): Promise<void> {
   let renderMathSvg: typeof import("./mathRenderer").renderMathSvg;
   try {
-    ({ renderMathSvg } = await import("./mathRenderer"));
+    const { createMathRenderer } = await import("./mathRenderer");
+    renderMathSvg = createMathRenderer();
   } catch (err) {
     console.error("Failed to load MathJax for PDF export:", err);
     return;
@@ -833,8 +851,10 @@ async function preRenderMathSvgs(
       const svg = renderMathSvg(token.text, token.displayMode);
       mathSvgs.set(token, {
         svg,
-        width: measureMathSvg(svg, token.displayMode),
+        ...measureMathSvg(svg, token.displayMode),
         displayMode: token.displayMode,
+        id: crypto.randomUUID(),
+        inlineAssets: new Map(),
       });
     } catch (err) {
       console.error("Failed to render TeX for PDF:", err);
@@ -842,17 +862,31 @@ async function preRenderMathSvgs(
   }
 }
 
-async function preRenderMermaidPngs(
+async function preRenderCodeBlocks(
   codeTokens: Tokens.Code[],
-  mermaidPngs: MermaidPngMap,
+  codeBlocks: PdfCodeBlockMap,
 ): Promise<void> {
   for (let i = 0; i < codeTokens.length; i++) {
     const token = codeTokens[i];
+    if (token.lang !== "mermaid") {
+      codeBlocks.set(token, {
+        text: await highlightExportCode(token.text, token.lang),
+        style: "code",
+        preserveLeadingSpaces: true,
+        preserveTrailingSpaces: true,
+      });
+      continue;
+    }
     const id = `mermaid-pdf-${Date.now()}-${i}`;
     try {
       const svg = await renderMermaidSvg(token.text, id, { theme: "default" });
       const png = await svgToPng(svg);
-      mermaidPngs.set(token, png);
+      codeBlocks.set(token, {
+        image: png.pngUrl,
+        width: Math.min(495, png.width || 495),
+        margin: [0, 6, 0, 6],
+        alignment: "center",
+      });
     } catch (err) {
       console.error("Failed to render Mermaid diagram for PDF:", err);
       const tempEl = document.getElementById(id);
@@ -865,10 +899,10 @@ export async function buildPdfDocDefinition(markdown: string, title: string, fil
   const { frontmatterYaml, body } = splitRenderableFrontmatter(markdown);
   const tokens = lexMarkdown(body);
 
-  const mermaidPngs: MermaidPngMap = new WeakMap();
-  const mermaidTokens = collectMermaidCodeTokens(tokens);
-  if (mermaidTokens.length > 0) {
-    await preRenderMermaidPngs(mermaidTokens, mermaidPngs);
+  const codeBlocks: PdfCodeBlockMap = new WeakMap();
+  const codeTokens = collectCodeTokens(tokens);
+  if (codeTokens.length > 0) {
+    await preRenderCodeBlocks(codeTokens, codeBlocks);
   }
 
   const images: ImageMap = new WeakMap();
@@ -877,30 +911,30 @@ export async function buildPdfDocDefinition(markdown: string, title: string, fil
     await preRenderImages(imageTokens, filePath ? dirname(filePath) : "", images);
   }
 
-  const mathSvgs: MathSvgMap = new WeakMap();
+  const mathSvgs: MathSvgMap = new Map();
   const mathTokens = collectMathTokens(tokens);
   if (mathTokens.length > 0) {
     await preRenderMathSvgs(mathTokens, mathSvgs);
   }
 
   const anchors = collectHeadingAnchors(tokens);
-  const content = blockTokensToContent(tokens, mermaidPngs, images, mathSvgs, anchors);
+  const content = blockTokensToContent(tokens, codeBlocks, images, mathSvgs, anchors);
   if (frontmatterYaml !== null) {
     content.unshift({ text: frontmatterYaml, style: "frontmatter", preserveLeadingSpaces: true });
   }
 
-  return {
+  const definition: TDocumentDefinitions = {
     info: { title },
     content,
     defaultStyle: { font: "Roboto", fontSize: 11, lineHeight: 1.4, color: "#1a1d23" },
     pageMargins: [50, 50, 50, 50],
     styles: {
-      h1: { fontSize: 22, bold: true, color: "#111", margin: [0, 12, 0, 6] },
-      h2: { fontSize: 18, bold: true, color: "#111", margin: [0, 10, 0, 6] },
-      h3: { fontSize: 15, bold: true, color: "#111", margin: [0, 8, 0, 4] },
-      h4: { fontSize: 13, bold: true, color: "#111", margin: [0, 6, 0, 4] },
-      h5: { fontSize: 11, bold: true, color: "#666", margin: [0, 4, 0, 2] },
-      h6: { fontSize: 10, bold: true, color: "#666", margin: [0, 4, 0, 2] },
+      h1: { fontSize: HEADING_FONT_SIZES[0], bold: true, color: "#111", margin: [0, 12, 0, 6] },
+      h2: { fontSize: HEADING_FONT_SIZES[1], bold: true, color: "#111", margin: [0, 10, 0, 6] },
+      h3: { fontSize: HEADING_FONT_SIZES[2], bold: true, color: "#111", margin: [0, 8, 0, 4] },
+      h4: { fontSize: HEADING_FONT_SIZES[3], bold: true, color: "#111", margin: [0, 6, 0, 4] },
+      h5: { fontSize: HEADING_FONT_SIZES[4], bold: true, color: "#666", margin: [0, 4, 0, 2] },
+      h6: { fontSize: HEADING_FONT_SIZES[5], bold: true, color: "#666", margin: [0, 4, 0, 2] },
       paragraph: { margin: [0, 4, 0, 4] },
       code: { fontSize: 9.5, background: "#f0f0f0", margin: [0, 4, 0, 4] },
       codespan: { background: "#f0f0f0" },
@@ -909,6 +943,8 @@ export async function buildPdfDocDefinition(markdown: string, title: string, fil
       tableHeader: { bold: true, fillColor: "#f5f7fa" },
     },
   };
+  registerInlineMath(definition, new Map([...mathSvgs.values()].flatMap((math) => [...math.inlineAssets])));
+  return definition;
 }
 
 /**
@@ -927,8 +963,10 @@ export async function exportPdf(markdown: string, filePath: string | null): Prom
 
     const docDef = await buildPdfDocDefinition(markdown, title, filePath);
     const pdfMake = await loadPdfMake();
-    const blob = await pdfMake.createPdf(docDef).getBlob();
-    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const bytes = await renderPdfWithInlineMath(docDef, async (definition) => {
+      const blob = await pdfMake.createPdf(definition).getBlob();
+      return new Uint8Array(await blob.arrayBuffer());
+    });
     await writeFile(savePath as string, bytes);
     showToast('Exported as PDF');
     return true;

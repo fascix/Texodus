@@ -19,16 +19,21 @@ import 'mathjax-full/js/input/tex/noundefined/NoUndefinedConfiguration.js';
 const adaptor = liteAdaptor();
 RegisterHTMLHandler(adaptor);
 
-const html = mathjax.document('', {
-  InputJax: new TeX({ packages: ['base', 'ams', 'newcommand', 'noundefined'] }),
-  OutputJax: new SVG({ fontCache: 'local' }),
-});
+/** One renderer per export: macros may be shared within a document, but
+ *  cannot affect another document or a later export of the same file. */
+export function createMathRenderer(): (tex: string, displayMode: boolean) => string {
+  const html = mathjax.document('', {
+    InputJax: new TeX({ packages: ['base', 'ams', 'newcommand', 'noundefined'] }),
+    OutputJax: new SVG({ fontCache: 'local' }),
+  });
+  return (tex, displayMode) => {
+    const node = html.convert(tex, { display: displayMode }) as unknown as LiteElement;
+    const svg = adaptor.innerHTML(node);
+    if (!svg.startsWith('<svg')) throw new Error('MathJax did not return an SVG element');
+    return svg;
+  };
+}
 
 export function renderMathSvg(tex: string, displayMode: boolean): string {
-  const node = html.convert(tex, { display: displayMode }) as unknown as LiteElement;
-  const svg = adaptor.innerHTML(node);
-  if (!svg.startsWith('<svg')) {
-    throw new Error('MathJax did not return an SVG element');
-  }
-  return svg;
+  return createMathRenderer()(tex, displayMode);
 }

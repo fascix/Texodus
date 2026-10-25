@@ -289,7 +289,7 @@ marked.use({
     },
     heading({ tokens, depth }: Tokens.Heading): string {
       const inlineHtml = this.parser.parseInline(tokens);
-      const id = slugger.slug(htmlToPlainText(inlineHtml));
+      const id = slugger.slug(plainInlineText(tokens));
       // Emitted as data-anchor, promoted to `id` by the hook below — DOMPurify
       // drops an `id` outright when its value names a document property
       // ("title", "body", "images", …), and a heading called "Title" losing
@@ -424,8 +424,24 @@ export async function ensureTexRendering(tokens: Token[]): Promise<void> {
  * Called without an options argument on purpose — see the note above
  * `marked.use`: passing options replaces the configured defaults.
  */
+// Heading text must not depend on whether the lazy math engine has loaded.
+// Keep TeX source in labels and ignore KaTeX's duplicated visual/annotation
+// text when assigning anchors or generating the table of contents.
+function plainInlineText(tokens: Token[]): string {
+  return htmlToPlainText(tokens.map((token) => {
+    if (token.type === 'inlineKatexMultiline' || token.type === 'blockKatexDollar') {
+      return escapeHtmlText(token.raw.trim());
+    }
+    if ('tokens' in token && Array.isArray(token.tokens)) return escapeHtmlText(plainInlineText(token.tokens));
+    if (token.type === 'html') return token.raw;
+    if (token.type === 'br') return ' ';
+    const text = 'text' in token && typeof token.text === 'string' ? token.text : '';
+    return token.type === 'text' || token.type === 'escape' ? text : escapeHtmlText(text);
+  }).join(''));
+}
+
 export function inlineMarkdownToPlainText(markdown: string): string {
-  return htmlToPlainText(marked.parseInline(markdown) as string);
+  return plainInlineText(marked.Lexer.lexInline(markdown));
 }
 
 export async function renderMarkdownToSafeHtml(markdown: string): Promise<string> {

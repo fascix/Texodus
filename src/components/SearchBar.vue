@@ -111,7 +111,7 @@ import { useEditorStore } from '../stores/editor';
 const {
   isOpen, queryText, caseSensitive, useRegex, wholeWord,
   replacementText, showReplace, canReplace,
-  matchCount, currentIndex, hasError, focusNonce,
+  matchCount, currentIndex, hasError, focusNonce, replaceFocus,
   close, setQuery, setCaseSensitive, setRegex, setWholeWord, next, prev, refresh, retarget,
   setReplacement, toggleReplace, replaceCurrent, replaceAll,
 } = useDocumentSearch();
@@ -152,7 +152,7 @@ function onReplaceKeydown(e: KeyboardEvent) {
 // Focus + select the field whenever search is (re)opened via Cmd/Ctrl+F.
 watch(focusNonce, async () => {
   await nextTick();
-  const input = showReplace.value ? replaceInputRef.value : inputRef.value;
+  const input = replaceFocus.value ? replaceInputRef.value : inputRef.value;
   input?.focus();
   input?.select();
 });

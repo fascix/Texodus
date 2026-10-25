@@ -7,7 +7,14 @@ declare module '*.vue' {
 }
 
 declare module 'prismjs' {
+  export interface PrismToken {
+    type: string;
+    content: string | PrismToken | (string | PrismToken)[];
+    alias?: string | string[];
+  }
+
   const Prism: {
+    tokenize: (text: string, grammar: unknown) => (string | PrismToken)[];
     highlightAllUnder: (root: Element | Document) => void;
     highlightAll: () => void;
     /** Registered grammars; used to check whether a component is loaded and

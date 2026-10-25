@@ -1,12 +1,3 @@
-## What I added
-
-- TeX math in the live preview and HTML exports, plus vector math in PDF exports.
-- Standard LaTeX delimiters and environments: `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, and `\begin{...}\end{...}`.
-- Multi-line TeX, formulas split across lines, nested `$` inside `\text{...}`, and escaped `\$`.
-- Lazy KaTeX loading: documents without TeX do not load the math engine.
-- Find and replace in the existing find bar, including empty replacements.
-- Color swatches beside `#RGB` and `#RRGGBB` values in the preview and HTML/PDF exports, including inline code. Fenced code stays unchanged.
-
 # Texodus
 
 Texodus is a modern, fast, and beautiful Markdown editor built with **Tauri 2** and **Vue 3**. Designed for performance and a premium user experience, it combines the power of Rust with the flexibility of modern web technologies to provide a native-feeling desktop writing environment with robust support for the **GitHub Flavored Markdown (GFM)** standard.
@@ -28,6 +19,7 @@ Download the latest release from the [releases page](https://github.com/w512/tex
 -   **Workspace Sidebar**: Open a folder to browse its Markdown files in a lazy-loaded tree, with a context menu to create, rename, delete, and reveal files. Clicking a file opens it in the current window; `Cmd/Ctrl+Click` (or the context menu) opens it in a new window.
 -   **Quick Open**: A `Cmd/Ctrl+P` palette to fuzzy-find and jump to any file in the workspace.
 -   **Find & Replace**: A full-width find bar (`Cmd/Ctrl+F`, replace with `Cmd+Alt+F` / `Ctrl+H`) with live match counts, case-sensitive, whole-word, and regular-expression toggles, an explicit replace toggle, plus replace-current and replace-all. Search works in both the editor and the live preview; replace is enabled whenever the editor pane is mounted.
+-   **Color Previews**: Color swatches beside `#RGB` and `#RRGGBB` values in prose and inline code, including HTML and PDF exports.
 -   **Multi-Document & Multi-Window**: Open multiple documents in a new tabbed interface or separate native windows. A file that is already open elsewhere gets its window focused instead of being opened twice.
 -   **Auto-Reload**: Files are automatically reloaded when they are changed on disk by external programs.
 -   **Settings Mode**: A dedicated settings mode for easier configuration.
