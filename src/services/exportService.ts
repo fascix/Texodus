@@ -4,6 +4,7 @@ import { type Token, type Tokens } from "marked";
 import type { Content, Decoration, TDocumentDefinitions } from "pdfmake/interfaces";
 import { lexMarkdown, renderFrontmatterHtml, renderMarkdownToHtml, sanitizeMarkdownHtml, splitRenderableFrontmatter } from "./markdownSanitizer";
 import { renderMermaidBlocks, renderMermaidSvg } from "./mermaidRenderer";
+import { highlightExportCode, highlightExportCodeBlocks } from "./exportCodeHighlighter";
 import { collectHeadingAnchors, type HeadingAnchors } from "./tableOfContents";
 import { anchorFragment } from "../utils/headingSlug";
 import { dirname, hasUrlScheme, isAbsolutePath, resolveLocalPath } from "../utils/path";
@@ -162,7 +163,7 @@ async function inlineLocalImages(container: HTMLElement, filePath: string | null
  */
 export async function renderExportHtml(markdown: string, title: string, filePath: string | null = null): Promise<string> {
   // Same frontmatter split as the live preview — without it marked misparses
-  // the block as hr + setext h2 (no Prism in exports, so the block is plain).
+  // the block as hr + setext h2. Metadata keeps its plain presentation.
   const { frontmatterYaml, body } = splitRenderableFrontmatter(markdown);
   const frontmatterHtml = frontmatterYaml !== null ? renderFrontmatterHtml(frontmatterYaml) : "";
   const bodyHtml = sanitizeMarkdownHtml(frontmatterHtml + renderMarkdownToHtml(body));
@@ -173,6 +174,7 @@ export async function renderExportHtml(markdown: string, title: string, filePath
   const tempContainer = document.createElement("div");
   tempContainer.innerHTML = bodyHtml;
   await renderMermaidBlocks(tempContainer, { theme: "default" });
+  await highlightExportCodeBlocks(tempContainer);
   await inlineLocalImages(tempContainer, filePath);
   const finalBody = tempContainer.innerHTML;
 
@@ -272,9 +274,9 @@ interface MermaidPngResult {
   height: number;
 }
 
-// Per-export map of code-token → rendered PNG. A WeakMap avoids the previous
-// pattern of mutating `marked` tokens with `(token as any).mermaidPngUrl`.
-type MermaidPngMap = WeakMap<Tokens.Code, MermaidPngResult>;
+// Pre-render code blocks before the synchronous token walk: highlighted text
+// for normal fences, PNGs for Mermaid. Never mutate the marked tokens.
+type PdfCodeBlockMap = WeakMap<Tokens.Code, Content>;
 
 interface EmbeddedImage {
   dataUrl: string;
@@ -505,7 +507,7 @@ function inlineTokensToContent(
   return out;
 }
 
-function blockTokensToContent(tokens: Token[], mermaidPngs: MermaidPngMap, images: ImageMap, anchors: HeadingAnchors): Content[] {
+function blockTokensToContent(tokens: Token[], codeBlocks: PdfCodeBlockMap, images: ImageMap, anchors: HeadingAnchors): Content[] {
   const out: Content[] = [];
   for (const token of tokens) {
     switch (token.type) {
@@ -532,7 +534,7 @@ function blockTokensToContent(tokens: Token[], mermaidPngs: MermaidPngMap, image
       case "list": {
         const l = token as Tokens.List;
         const items: Content[] = l.items.map((item) => {
-          const inner = blockTokensToContent(item.tokens, mermaidPngs, images, anchors);
+          const inner = blockTokensToContent(item.tokens, codeBlocks, images, anchors);
           const flat: Content = inner.length === 1 ? inner[0] : { stack: inner };
           if (item.task) {
             const marker = item.checked ? "☑  " : "☐  ";
@@ -545,23 +547,12 @@ function blockTokensToContent(tokens: Token[], mermaidPngs: MermaidPngMap, image
       }
       case "code": {
         const c = token as Tokens.Code;
-        const png = mermaidPngs.get(c);
-        if (png) {
-          const width = Math.min(495, png.width || 495);
-          out.push({
-            image: png.pngUrl,
-            width,
-            margin: [0, 6, 0, 6],
-            alignment: "center",
-          });
-        } else {
-          out.push({ text: c.text, style: "code", preserveLeadingSpaces: true });
-        }
+        out.push(codeBlocks.get(c) ?? { text: c.text, style: "code", preserveLeadingSpaces: true });
         break;
       }
       case "blockquote": {
         const b = token as Tokens.Blockquote;
-        out.push({ stack: blockTokensToContent(b.tokens, mermaidPngs, images, anchors), style: "blockquote", margin: [12, 4, 0, 4] });
+        out.push({ stack: blockTokensToContent(b.tokens, codeBlocks, images, anchors), style: "blockquote", margin: [12, 4, 0, 4] });
         break;
       }
       case "hr":
@@ -669,14 +660,13 @@ function svgToPng(svgString: string): Promise<MermaidPngResult> {
 }
 
 /**
- * Walks the token tree once, collecting every fenced mermaid code block.
- * Replaces the previous two-pass approach (checkHasMermaid + preRender).
+ * Collect code blocks at every nesting level, including lists and quotes.
  */
-function collectMermaidCodeTokens(tokens: Token[]): Tokens.Code[] {
+function collectCodeTokens(tokens: Token[]): Tokens.Code[] {
   const out: Tokens.Code[] = [];
   const walk = (list: Token[]) => {
     for (const t of list) {
-      if (t.type === "code" && (t as Tokens.Code).lang === "mermaid") {
+      if (t.type === "code") {
         out.push(t as Tokens.Code);
       }
       if (t.type === "list") {
@@ -692,17 +682,31 @@ function collectMermaidCodeTokens(tokens: Token[]): Tokens.Code[] {
   return out;
 }
 
-async function preRenderMermaidPngs(
+async function preRenderCodeBlocks(
   codeTokens: Tokens.Code[],
-  mermaidPngs: MermaidPngMap,
+  codeBlocks: PdfCodeBlockMap,
 ): Promise<void> {
   for (let i = 0; i < codeTokens.length; i++) {
     const token = codeTokens[i];
+    if (token.lang !== "mermaid") {
+      codeBlocks.set(token, {
+        text: await highlightExportCode(token.text, token.lang),
+        style: "code",
+        preserveLeadingSpaces: true,
+        preserveTrailingSpaces: true,
+      });
+      continue;
+    }
     const id = `mermaid-pdf-${Date.now()}-${i}`;
     try {
       const svg = await renderMermaidSvg(token.text, id, { theme: "default" });
       const png = await svgToPng(svg);
-      mermaidPngs.set(token, png);
+      codeBlocks.set(token, {
+        image: png.pngUrl,
+        width: Math.min(495, png.width || 495),
+        margin: [0, 6, 0, 6],
+        alignment: "center",
+      });
     } catch (err) {
       console.error("Failed to render Mermaid diagram for PDF:", err);
       const tempEl = document.getElementById(id);
@@ -715,10 +719,10 @@ export async function buildPdfDocDefinition(markdown: string, title: string, fil
   const { frontmatterYaml, body } = splitRenderableFrontmatter(markdown);
   const tokens = lexMarkdown(body);
 
-  const mermaidPngs: MermaidPngMap = new WeakMap();
-  const mermaidTokens = collectMermaidCodeTokens(tokens);
-  if (mermaidTokens.length > 0) {
-    await preRenderMermaidPngs(mermaidTokens, mermaidPngs);
+  const codeBlocks: PdfCodeBlockMap = new WeakMap();
+  const codeTokens = collectCodeTokens(tokens);
+  if (codeTokens.length > 0) {
+    await preRenderCodeBlocks(codeTokens, codeBlocks);
   }
 
   const images: ImageMap = new WeakMap();
@@ -728,7 +732,7 @@ export async function buildPdfDocDefinition(markdown: string, title: string, fil
   }
 
   const anchors = collectHeadingAnchors(tokens);
-  const content = blockTokensToContent(tokens, mermaidPngs, images, anchors);
+  const content = blockTokensToContent(tokens, codeBlocks, images, anchors);
   if (frontmatterYaml !== null) {
     content.unshift({ text: frontmatterYaml, style: "frontmatter", preserveLeadingSpaces: true });
   }

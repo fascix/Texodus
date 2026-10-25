@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildPdfDocDefinition, getExportTitle, renderExportHtml } from './exportService';
 import { resetMockTauri, setMockFile } from '../mock-tauri';
+import { COLOR_SCHEMES } from '../themes';
+import type { ContentText } from 'pdfmake/interfaces';
 
 // The mock fs reads file content back as UTF-8 bytes, so we can predict the
 // base64 the exporter will embed from the seeded text.
@@ -40,6 +42,79 @@ describe('renderExportHtml', () => {
   it('sanitizes scripts out of the exported body', async () => {
     const html = await renderExportHtml('safe\n\n<script>alert(1)</script>', 'T');
     expect(html).not.toContain('<script>alert(1)');
+  });
+});
+
+describe('syntax highlighting in HTML and PDF exports (issue #9)', () => {
+  const palette = COLOR_SCHEMES.find((scheme) => scheme.id === 'github')!.light;
+  const examples = [
+    { language: 'sql', source: "-- rows\nSELECT name, 42 FROM users WHERE name = 'Ada';", keyword: 'SELECT' },
+    { language: 'python', source: '# greeting\ndef greet(name):\n    return "Hello " + name', keyword: 'def' },
+    { language: 'py', source: 'def greet():\n\treturn "Hello"  ', keyword: 'def' },
+  ];
+
+  function findCodeBlocks(node: unknown): ContentText[] {
+    if (Array.isArray(node)) return node.flatMap(findCodeBlocks);
+    if (!node || typeof node !== 'object') return [];
+    if ('style' in node && node.style === 'code') return [node as ContentText];
+    return Object.values(node).flatMap(findCodeBlocks);
+  }
+
+  function parseExport(html: string): Document {
+    return new DOMParser().parseFromString(html, 'text/html');
+  }
+
+  it.each(examples)('highlights $language with matching, self-contained colors', async ({ language, source, keyword }) => {
+    const markdown = `\`\`\`${language}\n${source}\n\`\`\``;
+    const html = parseExport(await renderExportHtml(markdown, 'Code'));
+    const code = html.querySelector('pre code')!;
+    expect(code.textContent).toBe(source + '\n');
+    const keywordSpan = Array.from(code.querySelectorAll('span')).find((span) => span.textContent === keyword)!;
+    const expectedStyle = document.createElement('span').style;
+    expectedStyle.color = palette.syntaxKeyword;
+    expect(keywordSpan.style.color).toBe(expectedStyle.color);
+    expect(keywordSpan.style.fontWeight).toBe('600');
+    expect(html.querySelector('script, link[rel="stylesheet"]')).toBeNull();
+    expect(html.querySelector('style')!.textContent).not.toContain('var(--');
+
+    const pdf = await buildPdfDocDefinition(markdown, 'Code', null);
+    const [block] = findCodeBlocks(pdf.content);
+    const runs = block.text as ContentText[];
+    expect(runs.map((run) => run.text).join('')).toBe(source);
+    expect(runs.every((run) => typeof run.text === 'string')).toBe(true);
+    expect(runs.find((run) => run.text === keyword)).toMatchObject({ color: palette.syntaxKeyword, bold: true });
+    expect(runs.some((run) => run.color === palette.syntaxString)).toBe(true);
+    expect(block).toMatchObject({ preserveLeadingSpaces: true, preserveTrailingSpaces: true });
+    expect(block).not.toHaveProperty('image');
+  });
+
+  it.each(['', 'unknown-language'])('preserves code with no supported language (%s)', async (language) => {
+    const source = '  value < 2 && value > 0\n\tunchanged  ';
+    const markdown = `\`\`\`${language}\n${source}\n\`\`\``;
+    const html = parseExport(await renderExportHtml(markdown, 'Plain code'));
+    expect(html.querySelector('pre code')!.textContent).toBe(source + '\n');
+    const pdf = await buildPdfDocDefinition(markdown, 'Plain code', null);
+    const [block] = findCodeBlocks(pdf.content);
+    expect(block.text).toEqual([{ text: source, color: palette.codeText, bold: false, italics: false }]);
+  });
+
+  it('highlights nested fences in quotes and list items', async () => {
+    const markdown = '> ```sql\n> SELECT 1;\n> ```\n\n- Example:\n\n  ```py\n  return 2\n  ```';
+    const pdf = await buildPdfDocDefinition(markdown, 'Nested code', null);
+    const blocks = findCodeBlocks(pdf.content);
+    expect(blocks).toHaveLength(2);
+    expect(blocks.map((block) => (block.text as ContentText[]).find((run) => run.bold)?.text))
+      .toEqual(['SELECT', 'return']);
+    const html = parseExport(await renderExportHtml(markdown, 'Nested code'));
+    expect(html.querySelectorAll('pre code span[style*="font-weight: 600"]')).toHaveLength(2);
+  });
+
+  it('treats HTML-like code as text and still sanitizes the surrounding document', async () => {
+    const source = '<script>alert("x")</script>\n<img src=x onerror=alert(1)> & </code>';
+    const markdown = `\`\`\`html\n${source}\n\`\`\`\n\n<script>alert("outside")</script>`;
+    const html = parseExport(await renderExportHtml(markdown, 'Safe code'));
+    expect(html.querySelector('pre code')!.textContent).toBe(source + '\n');
+    expect(html.querySelector('script, img')).toBeNull();
   });
 });
 
