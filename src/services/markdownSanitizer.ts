@@ -6,7 +6,7 @@
  * and the `marked` options. Keeping them in one place ensures sanitization
  * rules can't quietly drift between the two surfaces.
  */
-import { marked, type MarkedExtension, type MarkedOptions, type Token, type Tokens } from 'marked';
+import { marked, Renderer, type MarkedExtension, type MarkedOptions, type Token, type Tokens } from 'marked';
 import { ensureKatex, isKatexReady, renderTexToMathml } from './katexRenderer';
 import DOMPurify from 'dompurify';
 import { detectFrontmatterState, extractFrontmatterBody, splitFrontmatter } from '../utils/frontmatter';
@@ -65,6 +65,57 @@ const TEX_ENVIRONMENTS = [
 const BLOCK_ENVIRONMENT_TEX = new RegExp(
   `^\\\\begin\\{(${TEX_ENVIRONMENTS.join('|')})\\}([\\s\\S]+?)\\\\end\\{\\1\\}[ \\t]*(?:\\n|$)`,
 );
+
+// ponytail: support opaque #RGB/#RRGGBB only; add alpha forms when requested.
+const HEX_COLOR = /(?<![\w])#[\da-f]{3}(?:[\da-f]{3})?(?![\w])/i;
+
+interface HexColorToken extends Tokens.Generic {
+  type: 'inlineColorSwatch';
+  text: string;
+  color: string;
+}
+
+export function normalizeHexColor(value: string): string | null {
+  if (!/^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(value)) return null;
+  const digits = value.slice(1).toLowerCase();
+  return digits.length === 3
+    ? `#${digits.split('').map((digit) => digit + digit).join('')}`
+    : `#${digits}`;
+}
+
+function colorSwatchHtml(color: string): string {
+  return `<span aria-hidden="true" data-color-swatch="${color}"></span>`;
+}
+
+const defaultRenderer = new Renderer();
+
+function colorSwatches(): MarkedExtension {
+  return {
+    extensions: [{
+      name: 'inlineColorSwatch',
+      level: 'inline',
+      start(src) {
+        return HEX_COLOR.exec(src)?.index;
+      },
+      tokenizer(src) {
+        const match = /^#[\da-f]{3}(?:[\da-f]{3})?(?![\w])/i.exec(src);
+        if (!match) return;
+        const color = normalizeHexColor(match[0]);
+        if (!color) return;
+        return {
+          type: 'inlineColorSwatch',
+          raw: match[0],
+          text: match[0],
+          color,
+        };
+      },
+      renderer(token) {
+        const colorToken = token as HexColorToken;
+        return `${colorSwatchHtml(colorToken.color)}${escapeHtmlText(colorToken.text)}`;
+      },
+    }],
+  };
+}
 
 type TexDelimiter = { open: string; close: string; displayMode: boolean };
 
@@ -228,6 +279,7 @@ function multilineKatex(): MarkedExtension {
 }
 
 marked.use(multilineKatex());
+marked.use(colorSwatches());
 
 marked.use({
   ...MARKED_OPTIONS,
@@ -243,6 +295,11 @@ marked.use({
       // ("title", "body", "images", …), and a heading called "Title" losing
       // its anchor is exactly the case a table of contents hits first.
       return `<h${depth} data-anchor="${escapeHtmlAttribute(id)}">${inlineHtml}</h${depth}>\n`;
+    },
+    codespan(token: Tokens.Codespan): string {
+      const html = defaultRenderer.codespan(token);
+      const color = normalizeHexColor(token.text);
+      return color ? `${colorSwatchHtml(color)}${html}` : html;
     },
   },
 });
@@ -266,7 +323,7 @@ const ALLOWED_TAGS = [
 ];
 
 const ALLOWED_ATTR = [
-  'href','src','alt','title','class','id','rel','type','checked','data-task','data-anchor',
+  'href','src','alt','title','class','id','rel','type','checked','data-task','data-anchor','data-color-swatch','aria-hidden',
   // MathML attributes emitted by KaTeX. None can carry a URL or a script.
   'xmlns','display','encoding','mathvariant','displaystyle','scriptlevel',
   'stretchy','fence','separator','lspace','rspace','accent','accentunder',
@@ -295,11 +352,27 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.nodeType !== 1) return;
   const element = node as Element;
   const anchor = element.getAttribute('data-anchor');
-  if (anchor === null) return;
-  element.removeAttribute('data-anchor');
-  if (!/^h[1-6]$/i.test(element.tagName)) return;
-  if (!ANCHOR_ID.test(anchor)) return;
-  element.setAttribute('id', anchor);
+  if (anchor !== null) {
+    element.removeAttribute('data-anchor');
+    if (/^h[1-6]$/i.test(element.tagName) && ANCHOR_ID.test(anchor)) {
+      element.setAttribute('id', anchor);
+    }
+  }
+
+  const color = element.getAttribute('data-color-swatch');
+  if (color && element.tagName.toLowerCase() === 'span' && /^#[\da-f]{6}$/i.test(color)) {
+    const swatch = element as HTMLElement;
+    swatch.style.display = 'inline-block';
+    swatch.style.width = '0.85em';
+    swatch.style.height = '0.85em';
+    swatch.style.backgroundColor = color;
+    swatch.style.border = '1px solid currentColor';
+    swatch.style.borderRadius = '2px';
+    swatch.style.verticalAlign = '-0.08em';
+    swatch.style.marginRight = '0.3em';
+  } else if (color !== null) {
+    element.removeAttribute('data-color-swatch');
+  }
 });
 
 export function sanitizeMarkdownHtml(rawHtml: string): string {

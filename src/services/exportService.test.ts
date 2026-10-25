@@ -48,6 +48,30 @@ describe('renderExportHtml', () => {
     expect(html).toContain('<msup>');
     expect(html).not.toContain('$E=mc^2$');
   });
+
+  it('exports swatches beside plain-text and inline-code colors, but not fenced code', async () => {
+    // AC-COLOR-SWATCH-002: HTML export shows text color swatches and preserves code.
+    const html = await renderExportHtml('Palette: #f00 and #AABBCC; `#abc`\n\n```txt\n#def\n```', 'Colors');
+    const swatches = html.match(/data-color-swatch/g) ?? [];
+
+    expect(swatches).toHaveLength(3);
+    expect(html).toContain('background-color: rgb(255, 0, 0)');
+    expect(html).toContain('background-color: rgb(170, 187, 204)');
+    expect(html).toContain('<code>#abc</code>');
+    expect(html).toContain('<code class="language-txt">#def\n</code>');
+  });
+
+  it('exports swatches for inline-code colors in table cells', async () => {
+    // AC-COLOR-SWATCH-005: HTML export colors backticked hex values in tables.
+    const markdown = '| Rôle | Couleur |\n| --- | --- |\n| Primaire | `#315F70` |\n| Secondaire | `#52646C` |';
+    const html = await renderExportHtml(markdown, 'Colors');
+
+    expect(html.match(/data-color-swatch/g)).toHaveLength(2);
+    expect(html).toContain('background-color: rgb(49, 95, 112)');
+    expect(html).toContain('background-color: rgb(82, 100, 108)');
+    expect(html).toContain('<code>#315F70</code>');
+    expect(html).toContain('<code>#52646C</code>');
+  });
 });
 
 describe('renderExportHtml — local image embedding', () => {
@@ -206,6 +230,54 @@ describe('buildPdfDocDefinition — flat inline runs', () => {
     expect(runs[0]).toMatchObject({ text: 'nowhere', bold: true });
     expect(runs[0].link).toBeUndefined();
     expect(runs[0].linkToDestination).toBeUndefined();
+  });
+});
+
+describe('buildPdfDocDefinition — hex color swatches', () => {
+  function walk(node: unknown, out: Record<string, unknown>[] = []): Record<string, unknown>[] {
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child, out);
+      return out;
+    }
+    if (node && typeof node === 'object') {
+      const record = node as Record<string, unknown>;
+      out.push(record);
+      for (const value of Object.values(record)) walk(value, out);
+    }
+    return out;
+  }
+
+  it('adds colored inline runs beside text colors and preserves code literals', async () => {
+    // AC-COLOR-SWATCH-003: PDF export shows a colored swatch beside each plain-text color.
+    const def = await buildPdfDocDefinition('Palette: #f00 and #AABBCC; `#abc`\n\n```txt\n#def\n```', 'Colors', null);
+    const nodes = walk(def.content);
+    const paragraph = nodes.find((node) => node.style === 'paragraph');
+    const runs = paragraph?.text as Record<string, unknown>[];
+    const firstColor = runs.findIndex((run) => run.text === '#f00');
+    const secondColor = runs.findIndex((run) => run.text === '#AABBCC');
+
+    expect(runs[firstColor + 1]).toMatchObject({ text: '  ', background: '#ff0000' });
+    expect(runs[secondColor + 1]).toMatchObject({ text: '  ', background: '#aabbcc' });
+    const inlineCodeColor = runs.findIndex((run) => run.text === '#abc');
+    expect(runs[inlineCodeColor + 1]).toMatchObject({ text: '  ', background: '#aabbcc' });
+    expect(JSON.stringify(def.content)).toContain('#f00');
+    expect(JSON.stringify(def.content)).toContain('#AABBCC');
+    expect(JSON.stringify(def.content)).toContain('#abc');
+    expect(JSON.stringify(def.content)).toContain('#def');
+  });
+
+  it('adds swatches for inline-code colors in table cells', async () => {
+    // AC-COLOR-SWATCH-006: PDF export colors backticked hex values in tables.
+    const markdown = '| Rôle | Couleur |\n| --- | --- |\n| Primaire | `#315F70` |\n| Secondaire | `#52646C` |';
+    const def = await buildPdfDocDefinition(markdown, 'Colors', null);
+    const swatches = walk(def.content).filter((node) => typeof node.background === 'string');
+
+    expect(swatches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: '  ', background: '#315f70' }),
+      expect.objectContaining({ text: '  ', background: '#52646c' }),
+    ]));
+    expect(JSON.stringify(def.content)).toContain('#315F70');
+    expect(JSON.stringify(def.content)).toContain('#52646C');
   });
 });
 

@@ -2,7 +2,7 @@ import { save, message } from "@tauri-apps/plugin-dialog";
 import { writeTextFile, writeFile, readFile } from "@tauri-apps/plugin-fs";
 import { type Token, type Tokens } from "marked";
 import type { Content, ContentText, Decoration, TDocumentDefinitions } from "pdfmake/interfaces";
-import { lexMarkdown, renderMarkdownToSafeHtml, splitRenderableFrontmatter } from "./markdownSanitizer";
+import { lexMarkdown, normalizeHexColor, renderMarkdownToSafeHtml, splitRenderableFrontmatter } from "./markdownSanitizer";
 import { renderMermaidBlocks, renderMermaidSvg } from "./mermaidRenderer";
 import { collectHeadingAnchors, type HeadingAnchors } from "./tableOfContents";
 import { anchorFragment } from "../utils/headingSlug";
@@ -458,6 +458,8 @@ interface InlineStyle {
   decoration?: Decoration | Decoration[];
   style?: string;
   color?: string;
+  background?: string;
+  fontSize?: number;
   link?: string;
   linkToDestination?: string;
 }
@@ -529,9 +531,19 @@ function inlineTokensToContent(
           decoration: withDecoration(inherited, "lineThrough"),
         }));
         break;
-      case "codespan":
-        leaf((t as Tokens.Codespan).text, { ...inherited, style: "codespan" });
+      case "codespan": {
+        const code = t as Tokens.Codespan;
+        leaf(code.text, { ...inherited, style: "codespan" });
+        const color = normalizeHexColor(code.text);
+        if (color) out.push({ text: "  ", ...inherited, fontSize: 8, background: color });
         break;
+      }
+      case "inlineColorSwatch": {
+        const colorToken = t as Token & { text: string; color: string };
+        leaf(colorToken.text);
+        out.push({ text: "  ", ...inherited, fontSize: 8, background: colorToken.color });
+        break;
+      }
       case "link": {
         const lt = t as Tokens.Link;
         out.push(...inlineTokensToContent(lt.tokens, anchors, linkStyleFor(lt, inherited, anchors)));

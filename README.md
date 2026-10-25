@@ -1,11 +1,11 @@
-## What I added (using agents)
+## What I added
 
-- TeX math in the live preview and in HTML/PDF exports.
+- TeX math in the live preview and HTML exports, plus vector math in PDF exports.
 - Standard LaTeX delimiters and environments: `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, and `\begin{...}\end{...}`.
 - Multi-line TeX, formulas split across lines, nested `$` inside `\text{...}`, and escaped `\$`.
-- Correct TeX rendering in PDF exports.
-- Find and replace merged into the existing find bar, with an empty replacement supported.
 - Lazy KaTeX loading: documents without TeX do not load the math engine.
+- Find and replace in the existing find bar, including empty replacements.
+- Color swatches beside `#RGB` and `#RRGGBB` values in the preview and HTML/PDF exports, including inline code. Fenced code stays unchanged.
 
 # Texodus
 
