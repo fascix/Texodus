@@ -39,6 +39,8 @@ import { type LayoutMode, useSettingsStore } from '../stores/settings';
 // Smallest side gutter of the text column in the single-pane layouts. Shared by
 // the padding formula (via --column-min-gutter) and the drag's fit limit.
 const COLUMN_MIN_GUTTER_REM = 2.5;
+// Place resize guides in the gutters, leaving room to select text at its edges.
+const COLUMN_EDGE_OFFSET_PX = 16;
 // How far from a column edge (either side) the pointer still grabs it.
 const COLUMN_EDGE_HIT_PX = 6;
 
@@ -113,8 +115,8 @@ function stopDrag(event?: PointerEvent) {
 
 // ── Text column width (single-pane layouts) ──────────────────────────────
 // The column is the scroller's content box: its side padding centres it (see
-// the style block). Dragging either edge resizes it symmetrically around the
-// centre. Edges are hit-tested on the container instead of with handle
+// the style block). Dragging either guide in the side gutters resizes it
+// symmetrically around the centre. Guides are hit-tested instead of using handle
 // elements: an overlay strip would swallow wheel events over the text.
 
 function columnScroller(): HTMLElement | null {
@@ -124,14 +126,15 @@ function columnScroller(): HTMLElement | null {
   return selector ? containerRef.value?.querySelector<HTMLElement>(selector) ?? null : null;
 }
 
-/** Viewport x of the column's left/right edges, plus the widest column that
+/** Viewport x of the left/right resize guides, plus the widest column that
  *  still keeps the minimum gutters. */
 function columnGeometry(scroller: HTMLElement) {
   const rect = scroller.getBoundingClientRect();
   const style = getComputedStyle(scroller);
   const inner = rect.left + scroller.clientLeft;
-  const left = inner + (parseFloat(style.paddingLeft) || 0);
-  const right = inner + scroller.clientWidth - (parseFloat(style.paddingRight) || 0);
+  const left = inner + (parseFloat(style.paddingLeft) || 0) - COLUMN_EDGE_OFFSET_PX;
+  const right = inner + scroller.clientWidth - (parseFloat(style.paddingRight) || 0)
+    + COLUMN_EDGE_OFFSET_PX;
   const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   return {
     left,
@@ -201,7 +204,10 @@ function startColumnDrag(event: PointerEvent) {
 
 function handleColumnDragMove(event: PointerEvent) {
   if (event.pointerId !== columnDragPointerId.value) return;
-  const width = Math.min(2 * Math.abs(event.clientX - columnDragCenter), columnDragMaxFit);
+  const width = Math.min(
+    2 * (Math.abs(event.clientX - columnDragCenter) - COLUMN_EDGE_OFFSET_PX),
+    columnDragMaxFit,
+  );
   // Grabbing the edge of a full-width column turns it into a fixed one.
   settingsStore.setContentWidthMode('fixed');
   settingsStore.setContentWidth(width);
