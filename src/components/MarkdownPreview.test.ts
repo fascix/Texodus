@@ -72,3 +72,53 @@ describe('in-page anchors', () => {
     wrapper.unmount();
   });
 });
+
+describe('TeX preview', () => {
+  it('renders inline math in the preview DOM', async () => {
+    const wrapper = await mountPreview('Area: $\\pi r^2$');
+    await vi.waitFor(() => {
+      expect(wrapper.element.querySelector('math')).not.toBeNull();
+    });
+    expect(wrapper.element.querySelector('math msup')).not.toBeNull();
+    wrapper.unmount();
+  });
+});
+
+describe('hex color swatches', () => {
+  it('shows swatches beside plain-text and inline-code colors, but not fenced code', async () => {
+    // AC-COLOR-SWATCH-001: preview shows each text color as a swatch beside its hex value.
+    const wrapper = await mountPreview('Palette: #f00 and #AABBCC; `#abc`\n\n```txt\n#def\n```');
+    const swatches = Array.from(wrapper.element.querySelectorAll('[data-color-swatch]'));
+
+    expect(swatches).toHaveLength(3);
+    expect(swatches.map((swatch) => (swatch as HTMLElement).style.backgroundColor)).toEqual([
+      'rgb(255, 0, 0)',
+      'rgb(170, 187, 204)',
+      'rgb(170, 187, 204)',
+    ]);
+    expect(wrapper.text()).toContain('#f00');
+    expect(wrapper.text()).toContain('#AABBCC');
+    expect(wrapper.element.querySelector('code')?.textContent).toBe('#abc');
+    expect(wrapper.element.querySelector('[data-color-swatch] + code')?.textContent).toBe('#abc');
+    expect(wrapper.element.querySelector('pre code')?.textContent).toBe('#def\n');
+    expect(wrapper.element.querySelector('code [data-color-swatch]')).toBeNull();
+    wrapper.unmount();
+  });
+
+  it('shows swatches for inline-code colors in table cells', async () => {
+    // AC-COLOR-SWATCH-004: preview colors remain visible when hex values use inline code.
+    const markdown = '| Rôle | Couleur |\n| --- | --- |\n| Primaire | `#315F70` |\n| Secondaire | `#52646C` |';
+    const wrapper = await mountPreview(markdown);
+    const swatches = Array.from(wrapper.element.querySelectorAll('td [data-color-swatch]'));
+
+    expect(swatches.map((swatch) => (swatch as HTMLElement).style.backgroundColor)).toEqual([
+      'rgb(49, 95, 112)',
+      'rgb(82, 100, 108)',
+    ]);
+    expect(Array.from(wrapper.element.querySelectorAll('td code') as NodeListOf<HTMLElement>).map((code) => code.textContent)).toEqual([
+      '#315F70',
+      '#52646C',
+    ]);
+    wrapper.unmount();
+  });
+});

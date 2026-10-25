@@ -1,7 +1,7 @@
 {
   "name": "texodus",
   "private": true,
-  "version": "4.5.0",
+  "version": "4.5.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -32,8 +32,11 @@
     "@tauri-apps/plugin-fs": "^2.5.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "dompurify": "^3.4.3",
+    "katex": "^0.16.47",
     "marked": "^18.0.3",
+    "mathjax-full": "3.2.2",
     "mermaid": "^11.15.0",
+    "pdf-lib": "^1.17.1",
     "pdfmake": "^0.3.8",
     "pinia": "^3.0.4",
     "prismjs": "^1.30.0",

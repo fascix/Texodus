@@ -5,7 +5,7 @@ import { useSettingsStore } from '../stores/settings';
 import EditorLayout from './EditorLayout.vue';
 
 function pointerEvent(type: string, clientX: number, pointerId = 7): Event {
-  const event = new MouseEvent(type, { bubbles: true, button: 0, clientX });
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX });
   Object.defineProperties(event, {
     pointerId: { value: pointerId },
     pointerType: { value: 'mouse' },
@@ -100,10 +100,10 @@ describe('EditorLayout text column', () => {
     const childDown = vi.fn();
     scroller.addEventListener('pointerdown', childDown);
 
-    // Right edge at 900 (1000 − 100 padding); the centre is 500.
-    scroller.dispatchEvent(pointerEvent('pointerdown', 903));
+    // Text ends at 900; the resize guide is 16px into the gutter.
+    scroller.dispatchEvent(pointerEvent('pointerdown', 919));
     expect(childDown).not.toHaveBeenCalled();
-    document.dispatchEvent(pointerEvent('pointermove', 850));
+    document.dispatchEvent(pointerEvent('pointermove', 866));
     expect(store.contentWidthMode).toBe('fixed');
     expect(store.contentWidth).toBe(700);
 
@@ -114,6 +114,38 @@ describe('EditorLayout text column', () => {
     document.dispatchEvent(pointerEvent('pointerup', 2000));
     document.dispatchEvent(pointerEvent('pointermove', 600));
     expect(store.contentWidth).toBe(920);
+    wrapper.unmount();
+  });
+
+  it('keeps resize guides and their hit areas outside the text', async () => {
+    const { wrapper, scroller } = mountPreview();
+    const childDown = vi.fn();
+    scroller.addEventListener('pointerdown', childDown);
+
+    // Both text edges and the space just outside them allow selection.
+    for (const x of [94, 100, 106, 894, 900, 906]) {
+      scroller.dispatchEvent(pointerEvent('pointermove', x));
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find('.column-guide').exists()).toBe(false);
+
+      const down = pointerEvent('pointerdown', x);
+      scroller.dispatchEvent(down);
+      expect(down.defaultPrevented).toBe(false);
+    }
+    expect(childDown).toHaveBeenCalledTimes(6);
+
+    for (const x of [84, 916]) {
+      scroller.dispatchEvent(pointerEvent('pointermove', x));
+      await wrapper.vm.$nextTick();
+      expect(wrapper.findAll('.column-guide').map((guide) => guide.attributes('style')))
+        .toEqual(['left: 84px;', 'left: 916px;']);
+
+      const down = pointerEvent('pointerdown', x);
+      scroller.dispatchEvent(down);
+      expect(down.defaultPrevented).toBe(true);
+      document.dispatchEvent(pointerEvent('pointerup', x));
+      await wrapper.vm.$nextTick();
+    }
     wrapper.unmount();
   });
 

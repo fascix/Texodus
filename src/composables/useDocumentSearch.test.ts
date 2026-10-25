@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
+import { history, undo } from '@codemirror/commands';
 
 // useMarkdownPreview is called at module level in useDocumentSearch,
 // so we need mock functions that persist across the module's lifetime.
@@ -23,7 +24,7 @@ function makeView(doc: string): EditorView {
   const div = document.createElement('div');
   document.body.appendChild(div);
   return new EditorView({
-    state: EditorState.create({ doc }),
+    state: EditorState.create({ doc, extensions: history() }),
     parent: div,
   });
 }
@@ -41,6 +42,8 @@ function resetSearch() {
   s.setCaseSensitive(false);
   s.setRegex(false);
   s.setWholeWord(false);
+  s.setReplacement('');
+  s.showReplace.value = false;
 }
 
 function setView(doc: string) {
@@ -211,6 +214,113 @@ describe('useDocumentSearch', () => {
       expect(s.currentIndex.value).toBe(0);
       s.prev();
       expect(s.currentIndex.value).toBe(0);
+    });
+  });
+
+  describe('replace', () => {
+    it('undoes replace-all as one edit', () => {
+      const view = setView('foo foo foo');
+      views.push(view);
+      const search = getSearch();
+      search.open();
+      search.setQuery('foo');
+      search.setReplacement('bar');
+      search.replaceAll();
+      expect(view.state.doc.toString()).toBe('bar bar bar');
+      expect(undo(view)).toBe(true);
+      expect(view.state.doc.toString()).toBe('foo foo foo');
+    });
+    it.each([
+      { source: 'foobar', pattern: '(?<=foo)bar', all: false, replacement: 'X', expected: 'fooX', count: 1 },
+      { source: 'barfoo', pattern: 'bar(?=foo)', all: false, replacement: 'X', expected: 'Xfoo', count: 1 },
+      { source: 'foo\nfoo', pattern: '^foo', all: true, replacement: 'X', expected: 'X\nX', count: 2 },
+      { source: 'foo\nfoo', pattern: 'foo$', all: true, replacement: 'X', expected: 'X\nX', count: 2 },
+      { source: 'ab', pattern: '(?<first>a)(b)', all: false, replacement: '$2$<first>$$', expected: 'ba$', count: 1 },
+      { source: 'foo', pattern: '(f)(x)?oo', all: true, replacement: '$2$1', expected: 'f', count: 1 },
+    ])('replaces the displayed matches for $pattern', ({ source, pattern, all, replacement, expected, count }) => {
+      const view = setView(source);
+      views.push(view);
+      const search = getSearch();
+      search.open();
+      search.setRegex(true);
+      search.setQuery(pattern);
+      search.setReplacement(replacement);
+      expect(search.matchCount.value).toBe(count);
+      if (all) search.replaceAll();
+      else search.replaceCurrent();
+      expect(view.state.doc.toString()).toBe(expected);
+    });
+
+    it('replaces the current match and advances to the next one', () => {
+      const view = setView('foo bar foo baz foo');
+      views.push(view);
+      const s = getSearch();
+      s.open();
+      s.setQuery('foo');
+      s.setReplacement('qux');
+
+      s.replaceCurrent();
+      expect(view.state.doc.toString()).toBe('qux bar foo baz foo');
+      expect(s.currentIndex.value).toBe(1);
+
+      s.replaceCurrent();
+      expect(view.state.doc.toString()).toBe('qux bar qux baz foo');
+    });
+
+    it('replaces every match at once', () => {
+      const view = setView('foo bar foo baz foo');
+      views.push(view);
+      const s = getSearch();
+      s.open();
+      s.setQuery('foo');
+      s.setReplacement('qux');
+
+      s.replaceAll();
+      expect(view.state.doc.toString()).toBe('qux bar qux baz qux');
+      expect(s.matchCount.value).toBe(0);
+    });
+
+    it('supports capture groups in regex replacements', () => {
+      const view = setView('John Doe');
+      views.push(view);
+      const s = getSearch();
+      s.open();
+      s.setRegex(true);
+      s.setQuery('(John) (Doe)');
+      s.setReplacement('$2, $1');
+
+      s.replaceAll();
+      expect(view.state.doc.toString()).toBe('Doe, John');
+    });
+
+    it('treats replacement dollar signs literally outside regex mode', () => {
+      const view = setView('foo');
+      views.push(view);
+      const s = getSearch();
+      s.open();
+      s.setQuery('foo');
+      s.setReplacement('$&');
+
+      s.replaceAll();
+      expect(view.state.doc.toString()).toBe('$&');
+    });
+
+    it('exposes replace only when an editor is mounted', () => {
+      const s = getSearch();
+      s.open();
+      expect(s.canReplace.value).toBe(false);
+      s.setQuery('foo');
+      s.setReplacement('bar');
+      s.replaceCurrent();
+      s.replaceAll();
+      expect(s.matchCount.value).toBe(0);
+    });
+
+    it('opens the replace row', () => {
+      const s = getSearch();
+      s.openReplace();
+      expect(s.isOpen.value).toBe(true);
+      expect(s.showReplace.value).toBe(true);
     });
   });
 
