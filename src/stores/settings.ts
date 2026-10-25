@@ -5,6 +5,9 @@ export type LayoutMode = 'split' | 'preview' | 'focus';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type DocumentMode = 'windows' | 'tabs';
 export type DocumentTitleMode = 'filename' | 'title';
+/** Text column in the single-pane layouts: the whole pane, or `contentWidth`
+ *  px centered (never wider than the pane). Split view always uses the pane. */
+export type ContentWidthMode = 'full' | 'fixed';
 export type { ColorSchemeId };
 
 export interface FontOption {
@@ -49,6 +52,17 @@ export const LINE_HEIGHTS = [
 export const LINE_HEIGHT_MIN = LINE_HEIGHTS[0];
 export const LINE_HEIGHT_MAX = LINE_HEIGHTS[LINE_HEIGHTS.length - 1];
 
+// Text column widths offered by the settings stepper, in px. The column-edge
+// drag in EditorLayout snaps to the same step, so its result is always one of
+// these options.
+export const CONTENT_WIDTH_STEP = 20;
+export const CONTENT_WIDTHS: readonly number[] = Array.from(
+  { length: (1600 - 480) / CONTENT_WIDTH_STEP + 1 },
+  (_, i) => 480 + i * CONTENT_WIDTH_STEP,
+);
+export const CONTENT_WIDTH_MIN = CONTENT_WIDTHS[0];
+export const CONTENT_WIDTH_MAX = CONTENT_WIDTHS[CONTENT_WIDTHS.length - 1];
+
 const RECENT_FILES_MAX = 10;
 
 // Single source for the sidebar width bounds. App.vue forwards them to CSS
@@ -73,6 +87,8 @@ interface PersistedSettings {
   previewFont: string;
   fontSize: number;
   lineHeight: number;
+  contentWidthMode: ContentWidthMode;
+  contentWidth: number;
   recentFiles: string[];
   documentMode: DocumentMode;
   documentTitleMode: DocumentTitleMode;
@@ -102,6 +118,8 @@ const DEFAULTS: PersistedSettings = {
   previewFont: PREVIEW_FONTS[0].value,
   fontSize: 14,
   lineHeight: 1.75,
+  contentWidthMode: 'fixed',
+  contentWidth: 780,
   recentFiles: [],
   documentMode: 'windows',
   documentTitleMode: 'filename',
@@ -134,6 +152,11 @@ const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system'];
 const DOCUMENT_MODES: readonly DocumentMode[] = ['windows', 'tabs'];
 const DOCUMENT_TITLE_MODES: readonly DocumentTitleMode[] = ['filename', 'title'];
 const LAYOUT_MODES: readonly LayoutMode[] = ['split', 'preview', 'focus'];
+const CONTENT_WIDTH_MODES: readonly ContentWidthMode[] = ['full', 'fixed'];
+
+function roundToContentWidthStep(n: number): number {
+  return Math.round(n / CONTENT_WIDTH_STEP) * CONTENT_WIDTH_STEP;
+}
 
 function oneOf<T extends string>(allowed: readonly T[], value: unknown, fallback: T): T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -186,6 +209,11 @@ function sanitizePersisted(raw: unknown): PersistedSettings {
     lineHeight: clampedNumber(
       p.lineHeight, LINE_HEIGHT_MIN, LINE_HEIGHT_MAX, DEFAULTS.lineHeight,
       (n) => Math.round(n * 100) / 100,
+    ),
+    contentWidthMode: oneOf(CONTENT_WIDTH_MODES, p.contentWidthMode, DEFAULTS.contentWidthMode),
+    contentWidth: clampedNumber(
+      p.contentWidth, CONTENT_WIDTH_MIN, CONTENT_WIDTH_MAX, DEFAULTS.contentWidth,
+      roundToContentWidthStep,
     ),
     recentFiles: pathList(p.recentFiles, RECENT_FILES_MAX),
     documentMode: oneOf(DOCUMENT_MODES, p.documentMode, DEFAULTS.documentMode),
@@ -309,6 +337,16 @@ export const useSettingsStore = defineStore('settings', {
     setLineHeight(lineHeight: number) {
       const rounded = Math.round(lineHeight * 100) / 100;
       this.lineHeight = Math.max(LINE_HEIGHT_MIN, Math.min(LINE_HEIGHT_MAX, rounded));
+    },
+    setContentWidthMode(mode: ContentWidthMode) { this.contentWidthMode = mode; },
+    toggleContentWidthMode() {
+      this.contentWidthMode = this.contentWidthMode === 'full' ? 'fixed' : 'full';
+    },
+    setContentWidth(width: number) {
+      if (!Number.isFinite(width)) return;
+      this.contentWidth = Math.max(
+        CONTENT_WIDTH_MIN, Math.min(CONTENT_WIDTH_MAX, roundToContentWidthStep(width)),
+      );
     },
     cycleTheme() {
       const modes: ThemeMode[] = ['system', 'light', 'dark'];

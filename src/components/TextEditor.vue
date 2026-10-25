@@ -138,6 +138,16 @@ watch(
   },
 );
 
+// The text column width is applied as padding on .cm-scroller, which resizes
+// the content without resizing the scroller — the only box CodeMirror
+// observes. Without a re-measure its height map stays on the old wrapping and
+// clicks/selection land on the wrong lines until something else triggers one.
+watch(
+  [() => settingsStore.contentWidthMode, () => settingsStore.contentWidth],
+  () => { view?.requestMeasure(); },
+  { flush: 'post' },
+);
+
 onUnmounted(() => {
   view?.destroy();
   view = null;
